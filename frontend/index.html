@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>肺结节检测系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <h1>肺结节检测系统</h1>
+            <div class="header-actions">
+                <span id="serverStatus" class="status-indicator">连接中...</span>
+                <button id="btnRefresh" class="btn btn-secondary" onclick="loadHistory()">刷新</button>
+                <button id="btnSettings" class="btn btn-secondary" onclick="openSettings()">⚙ 设置</button>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 左侧上传和预览区 -->
+            <section class="left-panel">
+                <div class="card">
+                    <h2>图片上传</h2>
+                    <div id="dropZone" class="drop-zone">
+                        <div class="drop-zone-content">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                            </svg>
+                            <p>拖拽图片到这里，或 <label for="fileInput" class="upload-link">点击上传</label></p>
+                            <p class="upload-hint">支持 JPG、PNG、DICOM 格式</p>
+                        </div>
+                        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.dcm" multiple hidden>
+                    </div>
+                    <div class="upload-actions">
+                        <button id="btnDetect" class="btn btn-primary" disabled onclick="startDetection()">
+                            开始检测
+                        </button>
+                        <button id="btnClear" class="btn btn-secondary" onclick="clearImage()">
+                            清除
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>检测结果</h2>
+                    <div id="resultPanel" class="result-panel">
+                        <p class="placeholder-text">请上传图片并点击检测</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 中间图像预览区 -->
+            <section class="center-panel">
+                <div class="card image-card">
+                    <h2>图像预览</h2>
+                    <div id="imageContainer" class="image-container">
+                        <canvas id="imageCanvas"></canvas>
+                        <canvas id="overlayCanvas"></canvas>
+                        <div id="imagePlaceholder" class="image-placeholder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <p>无图像</p>
+                        </div>
+                        <div id="loadingOverlay" class="loading-overlay hidden">
+                            <div class="spinner"></div>
+                            <p>检测中...</p>
+                        </div>
+                    </div>
+                    <div id="imageNavigation" class="image-navigation hidden">
+                        <button class="btn btn-small" onclick="prevImage()">◀ 上一张</button>
+                        <span id="imageCounter">0 / 0</span>
+                        <button class="btn btn-small" onclick="nextImage()">下一张 ▶</button>
+                    </div>
+                    <div class="image-controls">
+                        <button class="btn btn-small" onclick="zoomIn()">放大</button>
+                        <button class="btn btn-small" onclick="zoomOut()">缩小</button>
+                        <button class="btn btn-small" onclick="resetZoom()">重置</button>
+                        <button class="btn btn-small btn-primary" onclick="exportImage()">导出图像</button>
+                        <span id="zoomLevel" class="zoom-level">100%</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 右侧历史记录和统计 -->
+            <section class="right-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>检测历史</h2>
+                        <button id="btnClearHistory" class="btn btn-small btn-danger" onclick="clearAllHistory()">清空历史</button>
+                    </div>
+                    <div id="historyList" class="history-list">
+                        <p class="placeholder-text">暂无检测记录</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>统计信息</h2>
+                    <div id="statsChart" class="stats-chart"></div>
+                    <div class="stats-summary">
+                        <div class="stat-item">
+                            <span class="stat-value" id="totalDetections">0</span>
+                            <span class="stat-label">总检测次数</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="totalNodules">0</span>
+                            <span class="stat-label">累计结节数</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 结果详情弹窗 -->
+    <div id="detailModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>检测详情</h3>
+                <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <canvas id="detailCanvas"></canvas>
+                <div id="detailInfo" class="detail-info"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>设置</h3>
+                <button class="modal-close" onclick="closeSettings()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h4>模型选择</h4>
+                    <select id="modelSelect" class="settings-select">
+                        <option value="">加载中...</option>
+                    </select>
+                </div>
+                <div class="settings-section">
+                    <h4>检测参数</h4>
+                    <div class="settings-row">
+                        <label>置信度阈值</label>
+                        <input type="range" id="confThreshold" min="0" max="1" step="0.05" value="0.5">
+                        <span id="confValue">0.5</span>
+                    </div>
+                    <div class="settings-row">
+                        <label>NMS 阈值</label>
+                        <input type="range" id="nmsThreshold" min="0" max="1" step="0.05" value="0.45">
+                        <span id="nmsValue">0.45</span>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h4>界面主题</h4>
+                    <div class="settings-row">
+                        <label>主题模式</label>
+                        <select id="themeSelect" class="settings-select">
+                            <option value="light">亮色模式</option>
+                            <option value="dark">暗色模式</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
