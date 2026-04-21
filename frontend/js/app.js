@@ -834,7 +834,7 @@ window.nextImage = nextImage;
 window.zoomIn = () => canvas.zoomIn();
 window.zoomOut = () => canvas.zoomOut();
 window.resetZoom = () => canvas.resetZoom();
-window.exportImage = () => canvas.exportImage();
+window.exportCurrentImage = () => canvas.exportCurrentImage();
 window.showRecordDetail = showRecordDetail;
 window.removeRecord = removeRecord;
 window.removeBatch = removeBatch;
@@ -848,3 +848,70 @@ Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }
 });
+
+// 导出所有带标注的图片为ZIP
+window.exportAllImages = async function() {
+    if (!files || files.length === 0 || !batchResults || batchResults.length === 0) {
+        alert('没有可导出的图片');
+        return;
+    }
+
+    const zip = new JSZip();
+    let processed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const result = batchResults[i];
+
+        if (!result) continue;
+
+        try {
+            const img = await loadImageAsCanvas(file);
+            const nodules = result.nodules || [];
+
+            // 计算显示尺寸（用于换算标注位置）
+            const container = document.getElementById('imageContainer');
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const scaleX = containerWidth / img.width;
+            const scaleY = containerHeight / img.height;
+            const fitScale = Math.min(scaleX, scaleY, 1);
+
+            const exportCanvas = canvas.getExportCanvasWithOverlay(img, nodules, img.width, img.height);
+            const dataUrl = exportCanvas.toDataURL('image/png');
+            const base64 = dataUrl.split(',')[1];
+
+            zip.file(`nodule_detection_${i + 1}.png`, base64, { base64: true });
+            processed++;
+        } catch (e) {
+            console.error(`导出第 ${i + 1} 张图片失败:`, e);
+        }
+    }
+
+    if (processed === 0) {
+        alert('没有可导出的图片');
+        return;
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = `nodule_detection_all_${Date.now()}.zip`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+};
+
+// 加载图片为 Image 对象
+function loadImageAsCanvas(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}

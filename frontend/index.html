@@ -6,6 +6,7 @@
     <title>肺结节检测系统</title>
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -82,7 +83,8 @@
                         <button class="btn btn-small" onclick="zoomIn()">放大</button>
                         <button class="btn btn-small" onclick="zoomOut()">缩小</button>
                         <button class="btn btn-small" onclick="resetZoom()">重置</button>
-                        <button class="btn btn-small btn-primary" onclick="exportImage()">导出图像</button>
+                        <button class="btn btn-small btn-primary" id="btnExportCurrent" onclick="exportCurrentImage()">导出本张</button>
+                        <button class="btn btn-small btn-primary" id="btnExportAll" onclick="exportAllImages()">导出所有</button>
                         <span id="zoomLevel" class="zoom-level">100%</span>
                     </div>
                 </div>

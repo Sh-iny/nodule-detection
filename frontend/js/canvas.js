@@ -246,8 +246,8 @@ function centerOnNodule(nodule) {
     updateCanvasPosition();
 }
 
-// 导出带标记的图像
-function exportImage() {
+// 导出当前带标记的图像
+function exportCurrentImage() {
     if (!originalImage || !overlayCanvas) return;
 
     // 创建导出用的临时 canvas
@@ -283,6 +283,44 @@ function exportImage() {
     link.download = `nodule_detection_${Date.now()}.png`;
     link.href = exportCanvas.toDataURL('image/png');
     link.click();
+}
+
+// 导出所有带标记的图像（返回canvas供外部使用）
+function getExportCanvasWithOverlay(img, nodules, canvasWidth, canvasHeight) {
+    const exportCanvas = document.createElement('canvas');
+    const exportCtx = exportCanvas.getContext('2d');
+
+    exportCanvas.width = img.width;
+    exportCanvas.height = img.height;
+
+    // 绘制原图
+    exportCtx.drawImage(img, 0, 0, img.width, img.height);
+
+    // 计算缩放比例
+    const scaleX = canvasWidth / img.width;
+    const scaleY = canvasHeight / img.height;
+
+    // 绘制结节标注
+    nodules.forEach((nodule) => {
+        const x = nodule.x * scaleX;
+        const y = nodule.y * scaleY;
+        const halfSize = nodule.radius * Math.min(scaleX, scaleY);
+
+        const color = getConfidenceColor(nodule.confidence);
+
+        exportCtx.strokeStyle = color;
+        exportCtx.lineWidth = 2;
+        exportCtx.strokeRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2);
+
+        const label = nodule.confidence > 1
+            ? `${nodule.confidence.toFixed(1)}%`
+            : `${(nodule.confidence * 100).toFixed(0)}%`;
+        exportCtx.font = 'bold 12px Arial';
+        exportCtx.fillStyle = color;
+        exportCtx.fillText(label, x + halfSize + 4, y - 4);
+    });
+
+    return exportCanvas;
 }
 
 // 在详情弹窗中绘制
@@ -380,7 +418,8 @@ window.canvas = {
     zoomOut,
     resetZoom,
     centerOnNodule,
-    exportImage,
+    exportCurrentImage,
+    getExportCanvasWithOverlay,
     getImageDataUrl: () => {
         if (imageCanvas && imageCanvas.width > 0) {
             return imageCanvas.toDataURL();
