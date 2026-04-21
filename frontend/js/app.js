@@ -9,7 +9,8 @@ let batchResults = [];              // 批量检测结果
 let batchId = null;                // 当前批次ID
 let currentNodules = [];
 let statsChart = null;
-let segmentationEnabled = false;   // 图像处理模块状态
+let preprocessEnabled = false;    // 自适应预处理状态
+let segmentationEnabled = false;   // 肺部分割状态
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -83,6 +84,15 @@ function initEventListeners() {
             }
         });
     }
+
+    // 自适应预处理勾选
+    const preprocessToggle = document.getElementById('preprocessToggle');
+    if (preprocessToggle) {
+        preprocessToggle.addEventListener('change', (e) => {
+            window.preprocessEnabled = e.target.checked;
+            preprocessEnabled = e.target.checked;
+        });
+    }
 }
 
 // 处理文件列表
@@ -137,7 +147,13 @@ async function loadImageByIndex(index) {
     const file = files[index];
 
     try {
-        await canvas.loadImage(file);
+        // 如果有预处理后的图片数据，使用它
+        const result = batchResults[index];
+        if (result && result.processed_image_data) {
+            await canvas.loadImageFromDataUrl(result.processed_image_data);
+        } else {
+            await canvas.loadImage(file);
+        }
         updateImageCounter();
 
         // 显示当前图片对应的检测结果（如果有）
@@ -206,9 +222,16 @@ async function startDetection() {
 
     try {
         // 批量检测 - 使用一次请求发送所有图片
-        const statusText = segmentationEnabled ? '分割+检测中...' : '检测中...';
+        let statusText = '检测中...';
+        if (preprocessEnabled && segmentationEnabled) {
+            statusText = '预处理+分割+检测中...';
+        } else if (preprocessEnabled) {
+            statusText = '预处理+检测中...';
+        } else if (segmentationEnabled) {
+            statusText = '分割+检测中...';
+        }
         document.querySelector('#loadingOverlay p').textContent = statusText;
-        const batchResponse = await api.detectImages(files, segmentationEnabled);
+        const batchResponse = await api.detectImages(files, preprocessEnabled, segmentationEnabled);
 
         if (batchResponse.success) {
             batchResults = batchResponse.results;
@@ -870,6 +893,10 @@ window.saveSettings = saveSettings;
 Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }
+});
+Object.defineProperty(window, 'preprocessEnabled', {
+    get: () => preprocessEnabled,
+    set: (v) => { preprocessEnabled = v; }
 });
 Object.defineProperty(window, 'segmentationEnabled', {
     get: () => segmentationEnabled,

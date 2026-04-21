@@ -18,6 +18,7 @@ import uvicorn
 from detector import Detector
 from database import Database
 from segmentor import Segmentor
+from preprocessor import adaptive_preprocess_xray
 import numpy as np
 import cv2
 
@@ -116,8 +117,8 @@ async def health():
 
 
 @app.post("/api/detect")
-async def detect(image: UploadFile = File(...), segmentation: bool = False):
-    """上传单张图片进行检测，可选肺部分割"""
+async def detect(image: UploadFile = File(...), preprocess: bool = False, segmentation: bool = False):
+    """上传单张图片进行检测，可选自适应预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
@@ -135,14 +136,27 @@ async def detect(image: UploadFile = File(...), segmentation: bool = False):
         image_array = cv2.imread(tmp_path)
         lung_contours = []
         segmentation_elapsed_ms = 0
+        processed_image_data = None
 
+        # 优先级1：自适应预处理
+        if preprocess:
+            image_array = adaptive_preprocess_xray(image_array)
+            # 保存预处理后的图片
+            processed_path = tmp_path + ".processed.jpg"
+            cv2.imwrite(processed_path, image_array)
+            # 返回处理后的图片
+            with open(processed_path, 'rb') as f:
+                processed_bytes = f.read()
+            processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
+
+        # 优先级2：肺部分割
         if segmentation and segmentor.session is not None:
-            # 先分割获取轮廓
             mask, segmentation_elapsed_ms = segmentor.segment(image_array)
             lung_contours = segmentor.get_lung_contours(mask)
 
-            # 先用原图检测所有结节
-            nodules, elapsed_ms = detector.detect(tmp_path)
+            # 用预处理后的图检测所有结节
+            detect_path = processed_path if preprocess else tmp_path
+            nodules, elapsed_ms = detector.detect(detect_path)
 
             # 过滤：只保留位于或部分位于肺部区域的结节
             filtered_nodules = []
@@ -150,8 +164,14 @@ async def detect(image: UploadFile = File(...), segmentation: bool = False):
                 if _nodule_in_mask(n, mask):
                     filtered_nodules.append(n)
             nodules = filtered_nodules
+
+            if preprocess and os.path.exists(processed_path):
+                os.unlink(processed_path)
         else:
-            nodules, elapsed_ms = detector.detect(tmp_path)
+            detect_path = processed_path if preprocess else tmp_path
+            nodules, elapsed_ms = detector.detect(detect_path)
+            if preprocess and os.path.exists(processed_path):
+                os.unlink(processed_path)
 
         image_base64 = base64.b64encode(content).decode('utf-8')
         image_data = f"data:{image.content_type};base64,{image_base64}"
@@ -169,7 +189,8 @@ async def detect(image: UploadFile = File(...), segmentation: bool = False):
             "elapsed_ms": round(elapsed_ms, 2),
             "segmentation_applied": segmentation and segmentor.session is not None,
             "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
-            "lung_contours": lung_contours
+            "lung_contours": lung_contours,
+            "processed_image_data": processed_image_data
         }
     finally:
         os.unlink(tmp_path)
@@ -201,8 +222,8 @@ def _nodule_in_mask(nodule, mask: np.ndarray) -> bool:
 
 
 @app.post("/api/detect/batch")
-async def detect_batch(images: List[UploadFile] = File(...), segmentation: bool = False):
-    """批量上传图片进行检测，可选肺部分割"""
+async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = False, segmentation: bool = False):
+    """批量上传图片进行检测，可选自适应预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
@@ -225,24 +246,45 @@ async def detect_batch(images: List[UploadFile] = File(...), segmentation: bool 
             lung_contours = []
             segmentation_elapsed_ms = 0
 
+            # 优先级1：自适应预处理
+            if preprocess:
+                image_array = adaptive_preprocess_xray(image_array)
+                processed_path = tmp_path + ".processed.jpg"
+                cv2.imwrite(processed_path, image_array)
+
+            # 优先级2：肺部分割
             if segmentation and segmentor.session is not None:
                 mask, segmentation_elapsed_ms = segmentor.segment(image_array)
                 lung_contours = segmentor.get_lung_contours(mask)
 
-                nodules, elapsed_ms = detector.detect(tmp_path)
+                detect_path = processed_path if preprocess else tmp_path
+                nodules, elapsed_ms = detector.detect(detect_path)
 
                 filtered_nodules = []
                 for n in nodules:
                     if _nodule_in_mask(n, mask):
                         filtered_nodules.append(n)
                 nodules = filtered_nodules
+
+                if preprocess and os.path.exists(processed_path):
+                    os.unlink(processed_path)
             else:
-                nodules, elapsed_ms = detector.detect(tmp_path)
+                detect_path = processed_path if preprocess else tmp_path
+                nodules, elapsed_ms = detector.detect(detect_path)
+                if preprocess and os.path.exists(processed_path):
+                    os.unlink(processed_path)
 
             image_base64 = base64.b64encode(content).decode('utf-8')
             image_data = f"data:{image.content_type};base64,{image_base64}"
             result_json = json.dumps([n.to_dict() for n in nodules])
             record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
+
+            processed_path = tmp_path + ".processed.jpg" if preprocess else None
+            processed_image_data = None
+            if preprocess and processed_path and os.path.exists(processed_path):
+                with open(processed_path, 'rb') as f:
+                    processed_bytes = f.read()
+                processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
             results.append({
                 "success": True,
@@ -253,7 +295,8 @@ async def detect_batch(images: List[UploadFile] = File(...), segmentation: bool 
                 "elapsed_ms": round(elapsed_ms, 2),
                 "segmentation_applied": segmentation and segmentor.session is not None,
                 "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
-                "lung_contours": lung_contours
+                "lung_contours": lung_contours,
+                "processed_image_data": processed_image_data
             })
         finally:
             os.unlink(tmp_path)

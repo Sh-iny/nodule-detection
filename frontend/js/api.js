@@ -20,13 +20,16 @@ async function checkHealth() {
 }
 
 // 上传图片进行检测
-async function detectImage(file, segmentation = false) {
+async function detectImage(file, preprocess = false, segmentation = false) {
     const formData = new FormData();
     formData.append('image', file);
 
-    const url = segmentation
-        ? `${API_BASE}/api/detect?segmentation=true`
-        : `${API_BASE}/api/detect`;
+    const params = new URLSearchParams();
+    if (preprocess) params.append('preprocess', 'true');
+    if (segmentation) params.append('segmentation', 'true');
+
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+    const url = `${API_BASE}/api/detect${queryStr}`;
 
     try {
         const response = await fetch(url, {
@@ -47,15 +50,18 @@ async function detectImage(file, segmentation = false) {
 }
 
 // 批量上传图片进行检测
-async function detectImages(files, segmentation = false) {
+async function detectImages(files, preprocess = false, segmentation = false) {
     const formData = new FormData();
     for (const file of files) {
         formData.append('images', file);
     }
 
-    const url = segmentation
-        ? `${API_BASE}/api/detect/batch?segmentation=true`
-        : `${API_BASE}/api/detect/batch`;
+    const params = new URLSearchParams();
+    if (preprocess) params.append('preprocess', 'true');
+    if (segmentation) params.append('segmentation', 'true');
+
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+    const url = `${API_BASE}/api/detect/batch${queryStr}`;
 
     try {
         const response = await fetch(url, {

@@ -111,6 +111,25 @@ function loadImage(file) {
     });
 }
 
+function loadImageFromDataUrl(dataUrl) {
+    // 重置缩放和位置
+    currentZoom = 1;
+    panOffsetX = 0;
+    panOffsetY = 0;
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            originalImage = img;
+            resizeCanvas();
+            document.getElementById('imagePlaceholder').classList.add('hidden');
+            resolve(img);
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+}
+
 // 调整画布大小
 function resizeCanvas() {
     if (!originalImage) return;
@@ -440,6 +459,7 @@ function drawDetailCanvas(imageSrc, nodules) {
 window.canvas = {
     init: initCanvas,
     loadImage,
+    loadImageFromDataUrl,
     resizeCanvas,
     drawNodules,
     clearOverlay,
