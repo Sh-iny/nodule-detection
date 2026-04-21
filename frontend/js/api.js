@@ -20,12 +20,16 @@ async function checkHealth() {
 }
 
 // 上传图片进行检测
-async function detectImage(file) {
+async function detectImage(file, segmentation = false) {
     const formData = new FormData();
     formData.append('image', file);
 
+    const url = segmentation
+        ? `${API_BASE}/api/detect?segmentation=true`
+        : `${API_BASE}/api/detect`;
+
     try {
-        const response = await fetch(`${API_BASE}/api/detect`, {
+        const response = await fetch(url, {
             method: 'POST',
             body: formData
         });
@@ -43,14 +47,18 @@ async function detectImage(file) {
 }
 
 // 批量上传图片进行检测
-async function detectImages(files) {
+async function detectImages(files, segmentation = false) {
     const formData = new FormData();
     for (const file of files) {
         formData.append('images', file);
     }
 
+    const url = segmentation
+        ? `${API_BASE}/api/detect/batch?segmentation=true`
+        : `${API_BASE}/api/detect/batch`;
+
     try {
-        const response = await fetch(`${API_BASE}/api/detect/batch`, {
+        const response = await fetch(url, {
             method: 'POST',
             body: formData
         });

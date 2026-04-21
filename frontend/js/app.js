@@ -9,6 +9,7 @@ let batchResults = [];              // 批量检测结果
 let batchId = null;                // 当前批次ID
 let currentNodules = [];
 let statsChart = null;
+let segmentationEnabled = false;   // 图像处理模块状态
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,6 +64,24 @@ function initEventListeners() {
     const btnDetect = document.getElementById('btnDetect');
     if (btnDetect) {
         btnDetect.addEventListener('click', startDetection);
+    }
+
+    // 肺部分割勾选 - 切换时立即更新显示
+    const processToggle = document.getElementById('processModuleToggle');
+    if (processToggle) {
+        processToggle.addEventListener('change', (e) => {
+            window.segmentationEnabled = e.target.checked;
+            segmentationEnabled = e.target.checked;
+            // 如果当前有图像，重新显示（带或不带轮廓）
+            if (files.length > 0 && batchResults.length > 0) {
+                if (segmentationEnabled) {
+                    window.currentLungContours = batchResults[currentIndex].lung_contours || [];
+                } else {
+                    window.currentLungContours = [];
+                }
+                canvas.drawNodules(currentNodules);
+            }
+        });
     }
 }
 
@@ -187,8 +206,9 @@ async function startDetection() {
 
     try {
         // 批量检测 - 使用一次请求发送所有图片
-        document.querySelector('#loadingOverlay p').textContent = '检测中...';
-        const batchResponse = await api.detectImages(files);
+        const statusText = segmentationEnabled ? '分割+检测中...' : '检测中...';
+        document.querySelector('#loadingOverlay p').textContent = statusText;
+        const batchResponse = await api.detectImages(files, segmentationEnabled);
 
         if (batchResponse.success) {
             batchResults = batchResponse.results;
@@ -222,6 +242,9 @@ function displayResult(result, imageIndex) {
 
     // 保存当前结节列表
     currentNodules = nodules;
+
+    // 保存肺部轮廓供 canvas 使用
+    window.currentLungContours = result.lung_contours || [];
 
     // 如果是批量检测，显示总体信息
     const isBatch = batchResults.length > 1;
@@ -847,6 +870,10 @@ window.saveSettings = saveSettings;
 Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }
+});
+Object.defineProperty(window, 'segmentationEnabled', {
+    get: () => segmentationEnabled,
+    set: (v) => { segmentationEnabled = v; }
 });
 
 // 导出所有带标注的图片为ZIP

@@ -142,17 +142,47 @@ function resizeCanvas() {
 }
 
 // 绘制结节标记
+// 绘制肺部轮廓
+function drawLungContours() {
+    const contours = window.currentLungContours;
+    if (!contours || contours.length === 0 || !originalImage) return;
+
+    const scaleX = displayWidth / originalImage.width;
+    const scaleY = displayHeight / originalImage.height;
+
+    overlayCtx.strokeStyle = '#22c55e';
+    overlayCtx.lineWidth = 2;
+
+    contours.forEach(contour => {
+        if (contour.length < 3) return;
+
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(contour[0][0] * scaleX, contour[0][1] * scaleY);
+
+        for (let i = 1; i < contour.length; i++) {
+            overlayCtx.lineTo(contour[i][0] * scaleX, contour[i][1] * scaleY);
+        }
+
+        overlayCtx.closePath();
+        overlayCtx.stroke();
+    });
+}
+
 function drawNodules(nodules) {
     // 保存到全局变量供 zoom 操作使用
     window.currentNodules = nodules;
 
-    if (!nodules || nodules.length === 0 || !originalImage) {
-        clearOverlay();
-        return;
-    }
+    if (!originalImage) return;
 
     // 清空画布
     overlayCtx.clearRect(0, 0, displayWidth, displayHeight);
+
+    // 先绘制肺部轮廓（如果有轮廓数据就绘制，不管勾选状态）
+    if (window.currentLungContours && window.currentLungContours.length > 0) {
+        drawLungContours();
+    }
+
+    if (!nodules || nodules.length === 0) return;
 
     // 计算缩放比例（从原图到显示尺寸）
     const scaleX = displayWidth / originalImage.width;
@@ -192,7 +222,7 @@ function clearOverlay() {
 function zoomIn() {
     currentZoom = Math.min(currentZoom * 1.2, 5);
     resizeCanvas();
-    if (window.currentNodules) {
+    if (window.currentNodules || (window.segmentationEnabled && window.currentLungContours)) {
         drawNodules(window.currentNodules);
     }
 }
@@ -200,7 +230,7 @@ function zoomIn() {
 function zoomOut() {
     currentZoom = Math.max(currentZoom / 1.2, 0.2);
     resizeCanvas();
-    if (window.currentNodules) {
+    if (window.currentNodules || (window.segmentationEnabled && window.currentLungContours)) {
         drawNodules(window.currentNodules);
     }
 }
@@ -210,7 +240,7 @@ function resetZoom() {
     panOffsetX = 0;
     panOffsetY = 0;
     resizeCanvas();
-    if (window.currentNodules) {
+    if (window.currentNodules || (window.segmentationEnabled && window.currentLungContours)) {
         drawNodules(window.currentNodules);
     }
 }
@@ -414,6 +444,7 @@ window.canvas = {
     drawNodules,
     clearOverlay,
     drawDetailCanvas,
+    drawLungContours,
     zoomIn,
     zoomOut,
     resetZoom,

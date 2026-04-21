@@ -14,6 +14,10 @@
         <header class="header">
             <h1>肺结节检测系统</h1>
             <div class="header-actions">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="processModuleToggle">
+                    <span>肺部分割</span>
+                </label>
                 <span id="serverStatus" class="status-indicator">连接中...</span>
                 <button id="btnRefresh" class="btn btn-secondary" onclick="loadHistory()">刷新</button>
                 <button id="btnSettings" class="btn btn-secondary" onclick="openSettings()">⚙ 设置</button>

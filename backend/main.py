@@ -17,6 +17,9 @@ import uvicorn
 
 from detector import Detector
 from database import Database
+from segmentor import Segmentor
+import numpy as np
+import cv2
 
 
 # 判断是否为打包后的环境
@@ -58,7 +61,11 @@ print(f"FRONTEND exists: {FRONTEND_PATH.exists()}")
 # 初始化
 app = FastAPI(title="Lung Nodule Detector")
 detector = Detector()
+segmentor = Segmentor()
 db = Database(str(DB_PATH))
+
+# 分割模型路径
+SEGMENTOR_MODEL_PATH = MODEL_DIR / "unet_lung_smp.onnx"
 
 # 挂载静态文件 - 必须在这里
 if (FRONTEND_PATH / "css").exists():
@@ -80,6 +87,15 @@ async def startup():
     else:
         print(f"Warning: Model not found at {MODEL_PATH}")
 
+    # 加载分割模型
+    if SEGMENTOR_MODEL_PATH.exists():
+        if segmentor.load(str(SEGMENTOR_MODEL_PATH)):
+            print(f"Segmentation model loaded: {SEGMENTOR_MODEL_PATH}")
+        else:
+            print("Warning: Segmentation model loading failed")
+    else:
+        print(f"Warning: Segmentation model not found at {SEGMENTOR_MODEL_PATH}")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -100,34 +116,46 @@ async def health():
 
 
 @app.post("/api/detect")
-async def detect(image: UploadFile = File(...)):
-    """上传单张图片进行检测"""
-    # 检查模型
+async def detect(image: UploadFile = File(...), segmentation: bool = False):
+    """上传单张图片进行检测，可选肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
-    # 验证文件类型
     if image.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    # 读取图片内容
     content = await image.read()
 
-    # 保存临时文件用于检测
     suffix = ".jpg" if image.content_type == "image/jpeg" else ".png"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
 
     try:
-        # 执行检测
-        nodules, elapsed_ms = detector.detect(tmp_path)
+        image_array = cv2.imread(tmp_path)
+        lung_contours = []
+        segmentation_elapsed_ms = 0
 
-        # 将图片转为 Base64
+        if segmentation and segmentor.session is not None:
+            # 先分割获取轮廓
+            mask, segmentation_elapsed_ms = segmentor.segment(image_array)
+            lung_contours = segmentor.get_lung_contours(mask)
+
+            # 先用原图检测所有结节
+            nodules, elapsed_ms = detector.detect(tmp_path)
+
+            # 过滤：只保留位于或部分位于肺部区域的结节
+            filtered_nodules = []
+            for n in nodules:
+                if _nodule_in_mask(n, mask):
+                    filtered_nodules.append(n)
+            nodules = filtered_nodules
+        else:
+            nodules, elapsed_ms = detector.detect(tmp_path)
+
         image_base64 = base64.b64encode(content).decode('utf-8')
         image_data = f"data:{image.content_type};base64,{image_base64}"
 
-        # 保存到数据库
         result_json = json.dumps([n.to_dict() for n in nodules])
         batch_id = db.get_next_batch_id()
         record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
@@ -138,16 +166,43 @@ async def detect(image: UploadFile = File(...)):
             "count": len(nodules),
             "record_id": record_id,
             "batch_id": batch_id,
-            "elapsed_ms": round(elapsed_ms, 2)
+            "elapsed_ms": round(elapsed_ms, 2),
+            "segmentation_applied": segmentation and segmentor.session is not None,
+            "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
+            "lung_contours": lung_contours
         }
     finally:
-        # 清理临时文件
         os.unlink(tmp_path)
 
 
+def _nodule_in_mask(nodule, mask: np.ndarray) -> bool:
+    """检查结节中心是否在 mask 区域内，或与 mask 有交集"""
+    x, y = int(nodule.x), int(nodule.y)
+    r = int(nodule.radius)
+
+    # 检查结节中心是否在 mask 内
+    h, w = mask.shape[:2]
+    if 0 <= x < w and 0 <= y < h:
+        if mask[y, x] > 0:
+            return True
+
+    # 检查结节边界框与 mask 是否有交集
+    x1 = max(0, x - r)
+    y1 = max(0, y - r)
+    x2 = min(w, x + r)
+    y2 = min(h, y + r)
+
+    if x1 >= x2 or y1 >= y2:
+        return False
+
+    # 检查 ROI 内是否有 mask 区域
+    roi = mask[y1:y2, x1:x2]
+    return np.any(roi > 0)
+
+
 @app.post("/api/detect/batch")
-async def detect_batch(images: List[UploadFile] = File(...)):
-    """批量上传图片进行检测"""
+async def detect_batch(images: List[UploadFile] = File(...), segmentation: bool = False):
+    """批量上传图片进行检测，可选肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
@@ -166,7 +221,24 @@ async def detect_batch(images: List[UploadFile] = File(...)):
             tmp_path = tmp.name
 
         try:
-            nodules, elapsed_ms = detector.detect(tmp_path)
+            image_array = cv2.imread(tmp_path)
+            lung_contours = []
+            segmentation_elapsed_ms = 0
+
+            if segmentation and segmentor.session is not None:
+                mask, segmentation_elapsed_ms = segmentor.segment(image_array)
+                lung_contours = segmentor.get_lung_contours(mask)
+
+                nodules, elapsed_ms = detector.detect(tmp_path)
+
+                filtered_nodules = []
+                for n in nodules:
+                    if _nodule_in_mask(n, mask):
+                        filtered_nodules.append(n)
+                nodules = filtered_nodules
+            else:
+                nodules, elapsed_ms = detector.detect(tmp_path)
+
             image_base64 = base64.b64encode(content).decode('utf-8')
             image_data = f"data:{image.content_type};base64,{image_base64}"
             result_json = json.dumps([n.to_dict() for n in nodules])
@@ -178,7 +250,10 @@ async def detect_batch(images: List[UploadFile] = File(...)):
                 "count": len(nodules),
                 "record_id": record_id,
                 "batch_id": batch_id,
-                "elapsed_ms": round(elapsed_ms, 2)
+                "elapsed_ms": round(elapsed_ms, 2),
+                "segmentation_applied": segmentation and segmentor.session is not None,
+                "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
+                "lung_contours": lung_contours
             })
         finally:
             os.unlink(tmp_path)

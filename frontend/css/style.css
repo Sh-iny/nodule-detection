@@ -83,6 +83,35 @@ body {
     background: currentColor;
 }
 
+/* 图像处理模块 */
+.process-module {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+#processModuleSelect {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
 /* 主内容区布局 */
 .main-content {
     display: grid;
