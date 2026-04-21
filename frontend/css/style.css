@@ -659,6 +659,66 @@ body {
     overflow-y: auto;
 }
 
+/* 预处理参数面板 */
+.preprocess-panel {
+    position: fixed;
+    top: 60px;
+    right: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: 320px;
+    z-index: 50;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.preprocess-panel.hidden {
+    display: none;
+}
+
+.preprocess-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.preprocess-panel-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.preprocess-panel-body {
+    padding: 16px;
+}
+
+.param-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.param-row label {
+    width: 110px;
+    font-size: 13px;
+    color: var(--secondary-color);
+}
+
+.param-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+}
+
+.param-row span {
+    width: 40px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+}
+
 #detailCanvas {
     max-width: 100%;
     border-radius: 8px;

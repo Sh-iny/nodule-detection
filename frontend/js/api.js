@@ -20,13 +20,15 @@ async function checkHealth() {
 }
 
 // 上传图片进行检测
-async function detectImage(file, preprocess = false, segmentation = false) {
+async function detectImage(file, preprocess = false, segmentation = false, gamma = null, clipLimit = null) {
     const formData = new FormData();
     formData.append('image', file);
 
     const params = new URLSearchParams();
     if (preprocess) params.append('preprocess', 'true');
     if (segmentation) params.append('segmentation', 'true');
+    if (gamma !== null) params.append('gamma', gamma.toString());
+    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const url = `${API_BASE}/api/detect${queryStr}`;
@@ -50,7 +52,7 @@ async function detectImage(file, preprocess = false, segmentation = false) {
 }
 
 // 批量上传图片进行检测
-async function detectImages(files, preprocess = false, segmentation = false) {
+async function detectImages(files, preprocess = false, segmentation = false, gamma = null, clipLimit = null) {
     const formData = new FormData();
     for (const file of files) {
         formData.append('images', file);
@@ -59,6 +61,8 @@ async function detectImages(files, preprocess = false, segmentation = false) {
     const params = new URLSearchParams();
     if (preprocess) params.append('preprocess', 'true');
     if (segmentation) params.append('segmentation', 'true');
+    if (gamma !== null) params.append('gamma', gamma.toString());
+    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const url = `${API_BASE}/api/detect/batch${queryStr}`;

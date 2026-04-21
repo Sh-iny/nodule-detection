@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
@@ -117,7 +117,8 @@ async def health():
 
 
 @app.post("/api/detect")
-async def detect(image: UploadFile = File(...), preprocess: bool = False, segmentation: bool = False):
+async def detect(image: UploadFile = File(...), preprocess: bool = False, segmentation: bool = False,
+                gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
     """上传单张图片进行检测，可选自适应预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
@@ -140,7 +141,7 @@ async def detect(image: UploadFile = File(...), preprocess: bool = False, segmen
 
         # 优先级1：自适应预处理
         if preprocess:
-            image_array = adaptive_preprocess_xray(image_array)
+            image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
             # 保存预处理后的图片
             processed_path = tmp_path + ".processed.jpg"
             cv2.imwrite(processed_path, image_array)
@@ -222,7 +223,8 @@ def _nodule_in_mask(nodule, mask: np.ndarray) -> bool:
 
 
 @app.post("/api/detect/batch")
-async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = False, segmentation: bool = False):
+async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = False, segmentation: bool = False,
+                      gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
     """批量上传图片进行检测，可选自适应预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
@@ -248,7 +250,7 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
 
             # 优先级1：自适应预处理
             if preprocess:
-                image_array = adaptive_preprocess_xray(image_array)
+                image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
                 processed_path = tmp_path + ".processed.jpg"
                 cv2.imwrite(processed_path, image_array)
 

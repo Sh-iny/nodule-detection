@@ -91,6 +91,23 @@ function initEventListeners() {
         preprocessToggle.addEventListener('change', (e) => {
             window.preprocessEnabled = e.target.checked;
             preprocessEnabled = e.target.checked;
+            togglePreprocessPanel();
+        });
+    }
+
+    // Gamma 滑块
+    const gammaSlider = document.getElementById('gammaSlider');
+    if (gammaSlider) {
+        gammaSlider.addEventListener('input', (e) => {
+            document.getElementById('gammaValue').textContent = e.target.value;
+        });
+    }
+
+    // CLAHE Clip 滑块
+    const clipSlider = document.getElementById('clipSlider');
+    if (clipSlider) {
+        clipSlider.addEventListener('input', (e) => {
+            document.getElementById('clipValue').textContent = e.target.value;
         });
     }
 }
@@ -221,6 +238,12 @@ async function startDetection() {
     loadingOverlay.classList.remove('hidden');
 
     try {
+        // 获取预处理参数
+        const gammaSlider = document.getElementById('gammaSlider');
+        const clipSlider = document.getElementById('clipSlider');
+        const gamma = gammaSlider ? parseFloat(gammaSlider.value) : null;
+        const clipLimit = clipSlider ? parseFloat(clipSlider.value) : null;
+
         // 批量检测 - 使用一次请求发送所有图片
         let statusText = '检测中...';
         if (preprocessEnabled && segmentationEnabled) {
@@ -231,7 +254,7 @@ async function startDetection() {
             statusText = '分割+检测中...';
         }
         document.querySelector('#loadingOverlay p').textContent = statusText;
-        const batchResponse = await api.detectImages(files, preprocessEnabled, segmentationEnabled);
+        const batchResponse = await api.detectImages(files, preprocessEnabled, segmentationEnabled, gamma, clipLimit);
 
         if (batchResponse.success) {
             batchResults = batchResponse.results;
@@ -801,6 +824,32 @@ async function loadModelList() {
     }
 }
 
+// 切换预处理参数面板显示
+function togglePreprocessPanel() {
+    const panel = document.getElementById('preprocessPanel');
+    if (panel) {
+        panel.classList.toggle('hidden');
+    }
+}
+
+// 重置 Gamma 为自动
+function resetGamma() {
+    const gammaSlider = document.getElementById('gammaSlider');
+    if (gammaSlider) {
+        gammaSlider.value = 1.0;
+        document.getElementById('gammaValue').textContent = '1.0';
+    }
+}
+
+// 重置 CLAHE Clip 为自动
+function resetClip() {
+    const clipSlider = document.getElementById('clipSlider');
+    if (clipSlider) {
+        clipSlider.value = 2.0;
+        document.getElementById('clipValue').textContent = '2.0';
+    }
+}
+
 // 打开设置弹窗
 async function openSettings() {
     const modal = document.getElementById('settingsModal');
@@ -890,6 +939,9 @@ window.clearAllHistory = clearAllHistory;
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.saveSettings = saveSettings;
+window.togglePreprocessPanel = togglePreprocessPanel;
+window.resetGamma = resetGamma;
+window.resetClip = resetClip;
 Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }
