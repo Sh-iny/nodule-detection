@@ -117,7 +117,7 @@ function initEventListeners() {
         btnDetect.addEventListener('click', startDetection);
     }
 
-    // 肺部分割勾选 - 切换时立即处理并显示轮廓
+    // 肺部分割勾选 - 切换时对所有图片处理并显示轮廓
     const processToggle = document.getElementById('processModuleToggle');
     if (processToggle) {
         processToggle.addEventListener('change', async (e) => {
@@ -130,7 +130,8 @@ function initEventListeners() {
             const nodulesToDraw = currentNodules || [];
 
             if (e.target.checked) {
-                // 勾选时：获取分割轮廓
+                // 勾选时：对所有图片获取分割轮廓
+                showPreviewLoading(true);
                 try {
                     let gamma = null;
                     let clipLimit = null;
@@ -138,25 +139,34 @@ function initEventListeners() {
                         gamma = parseFloat(document.getElementById('gammaSlider').value);
                         clipLimit = parseFloat(document.getElementById('clipSlider').value);
                     }
-                    const result = await api.previewSegmentation(files[currentIndex], preprocessEnabled, gamma, clipLimit);
-                    window.currentLungContours = result.lung_contours || [];
+                    // 对所有图片处理
+                    for (let i = 0; i < files.length; i++) {
+                        const result = await api.previewSegmentation(files[i], preprocessEnabled, gamma, clipLimit);
+                        batchResults[i] = batchResults[i] || {};
+                        batchResults[i].lung_contours = result.lung_contours || [];
+                    }
+                    window.currentLungContours = batchResults[currentIndex]?.lung_contours || [];
                 } catch (error) {
                     console.error('Segmentation preview failed:', error);
                     window.currentLungContours = [];
                 }
+                showPreviewLoading(false);
             } else {
                 // 取消勾选时：隐藏轮廓
+                for (let i = 0; i < files.length; i++) {
+                    if (batchResults[i]) batchResults[i].lung_contours = [];
+                }
                 window.currentLungContours = [];
             }
 
-            // 统一重绘（由 drawNodules 内部处理轮廓和结节的绘制顺序）
+            // 统一重绘
             if (originalImage) {
                 canvas.drawNodules(nodulesToDraw);
             }
         });
     }
 
-    // 自适应预处理勾选 - 显示/隐藏参数面板，并自动处理图像
+    // 自适应预处理勾选 - 显示/隐藏参数面板，并自动处理所有图像
     const preprocessToggle = document.getElementById('preprocessToggle');
     if (preprocessToggle) {
         preprocessToggle.addEventListener('change', async (e) => {
@@ -168,9 +178,41 @@ function initEventListeners() {
             }
 
             if (e.target.checked) {
-                // 勾选时：自动应用参数并预览
+                // 勾选时：对所有图片应用参数并预览
                 if (files.length > 0) {
-                    await applyAutoParams();
+                    showPreviewLoading(true);
+                    try {
+                        // 先获取自动参数
+                        const params = await api.calcPreprocessParams(files[currentIndex]);
+                        const gamma = params.gamma || 1.0;
+                        const clipLimit = params.clip_limit || 2.0;
+
+                        // 更新UI
+                        document.getElementById('gammaSlider').value = gamma;
+                        document.getElementById('gammaValue').textContent = gamma;
+                        document.getElementById('clipSlider').value = clipLimit;
+                        document.getElementById('clipValue').textContent = clipLimit;
+                        document.getElementById('gammaAutoBtn').classList.add('active');
+                        document.getElementById('clipAutoBtn').classList.add('active');
+                        preprocessAutoMode = true;
+
+                        // 对所有图片预览
+                        for (let i = 0; i < files.length; i++) {
+                            const result = await api.previewPreprocess(files[i], gamma, clipLimit);
+                            if (!batchResults[i]) batchResults[i] = {};
+                            batchResults[i].processed_image_data = result.processed_image_data || null;
+                        }
+
+                        // 加载当前图片的预处理结果
+                        const result = batchResults[currentIndex];
+                        if (result && result.processed_image_data) {
+                            await canvas.loadImageFromDataUrl(result.processed_image_data);
+                            canvas.drawNodules(currentNodules);
+                        }
+                    } catch (error) {
+                        console.error('Preprocess preview failed:', error);
+                    }
+                    showPreviewLoading(false);
                 }
             } else {
                 // 取消勾选时：恢复原始图像并重绘
@@ -180,8 +222,11 @@ function initEventListeners() {
                 document.getElementById('gammaAutoBtn').classList.remove('active');
                 document.getElementById('clipAutoBtn').classList.remove('active');
                 if (files.length > 0) {
+                    // 清除所有预处理结果
+                    for (let i = 0; i < files.length; i++) {
+                        if (batchResults[i]) batchResults[i].processed_image_data = null;
+                    }
                     await canvas.loadImage(files[currentIndex]);
-                    // 恢复后重绘结节和轮廓
                     canvas.drawNodules(currentNodules);
                 }
             }
@@ -236,7 +281,8 @@ async function handleFiles(fileList) {
 
     // 重置状态
     currentIndex = 0;
-    batchResults = [];
+    // 初始化 batchResults 数组，每个元素都是空对象
+    batchResults = new Array(files.length).fill(null).map(() => ({}));
     batchId = null;
 
     // 加载第一张图片
@@ -272,8 +318,8 @@ async function loadImageByIndex(index) {
         }
 
         // 更新肺部轮廓（肺部分割模式）
-        if (result) {
-            window.currentLungContours = result.lung_contours || [];
+        if (result && result.lung_contours && result.lung_contours.length > 0) {
+            window.currentLungContours = result.lung_contours;
         } else {
             window.currentLungContours = [];
         }
@@ -282,12 +328,15 @@ async function loadImageByIndex(index) {
         // 加载完成后重绘轮廓
         afterImageLoad();
 
-        // 显示当前图片对应的检测结果（如果有）
-        if (batchResults[index]) {
+        // 显示当前图片对应的检测结果（如果有结节数据）
+        if (batchResults[index] && batchResults[index].nodules) {
             displayResult(batchResults[index], index);
         } else {
+            // 只有分割轮廓或预览图像时，不清空overlay
             currentNodules = [];
-            canvas.clearOverlay();
+            if (!(result && result.lung_contours && result.lung_contours.length > 0)) {
+                canvas.clearOverlay();
+            }
             document.getElementById('resultPanel').innerHTML = '<p class="placeholder-text">点击"开始检测"进行肺结节检测</p>';
         }
     } catch (error) {
