@@ -14,45 +14,15 @@
         <header class="header">
             <h1>肺结节检测系统</h1>
             <div class="header-actions">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="preprocessToggle">
-                    <span>自适应预处理</span>
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="processModuleToggle">
-                    <span>肺部分割</span>
-                </label>
                 <span id="serverStatus" class="status-indicator">连接中...</span>
                 <button id="btnRefresh" class="btn btn-secondary" onclick="loadHistory()">刷新</button>
                 <button id="btnSettings" class="btn btn-secondary" onclick="openSettings()">⚙ 设置</button>
             </div>
         </header>
 
-        <!-- 预处理参数模块 -->
-        <section id="preprocessPanel" class="preprocess-panel hidden">
-            <div class="preprocess-panel-header">
-                <h3>预处理参数</h3>
-                <button class="modal-close" onclick="togglePreprocessPanel()">&times;</button>
-            </div>
-            <div class="preprocess-panel-body">
-                <div class="param-row">
-                    <label>Gamma (亮度)</label>
-                    <input type="range" id="gammaSlider" min="0.1" max="3.0" step="0.1" value="1.0">
-                    <span id="gammaValue">1.0</span>
-                    <button class="btn btn-small" onclick="resetGamma()">自动</button>
-                </div>
-                <div class="param-row">
-                    <label>CLAHE Clip (对比度)</label>
-                    <input type="range" id="clipSlider" min="0.5" max="5.0" step="0.1" value="2.0">
-                    <span id="clipValue">2.0</span>
-                    <button class="btn btn-small" onclick="resetClip()">自动</button>
-                </div>
-            </div>
-        </section>
-
         <!-- 主内容区 -->
         <main class="main-content">
-            <!-- 左侧上传和预览区 -->
+            <!-- 左侧上传和功能区 -->
             <section class="left-panel">
                 <div class="card">
                     <h2>图片上传</h2>
@@ -77,9 +47,30 @@
                 </div>
 
                 <div class="card">
-                    <h2>检测结果</h2>
-                    <div id="resultPanel" class="result-panel">
-                        <p class="placeholder-text">请上传图片并点击检测</p>
+                    <h2>图像处理</h2>
+                    <div class="process-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="preprocessToggle">
+                            <span>自适应预处理</span>
+                        </label>
+                        <div id="preprocessParams" class="module-params hidden">
+                            <div class="param-row">
+                                <label>Gamma</label>
+                                <button id="gammaAutoBtn" class="btn btn-small btn-auto" onclick="resetGamma()">自动</button>
+                                <span id="gammaValue">-</span>
+                                <input type="range" id="gammaSlider" min="0.1" max="3.0" step="0.1" value="1.0">
+                            </div>
+                            <div class="param-row">
+                                <label>CLAHE</label>
+                                <button id="clipAutoBtn" class="btn btn-small btn-auto" onclick="resetClip()">自动</button>
+                                <span id="clipValue">-</span>
+                                <input type="range" id="clipSlider" min="0.5" max="5.0" step="0.1" value="2.0">
+                            </div>
+                        </div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="processModuleToggle">
+                            <span>肺部分割</span>
+                        </label>
                     </div>
                 </div>
             </section>
@@ -116,6 +107,13 @@
                         <button class="btn btn-small btn-primary" id="btnExportCurrent" onclick="exportCurrentImage()">导出本张</button>
                         <button class="btn btn-small btn-primary" id="btnExportAll" onclick="exportAllImages()">导出所有</button>
                         <span id="zoomLevel" class="zoom-level">100%</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>检测结果</h2>
+                    <div id="resultPanel" class="result-panel">
+                        <p class="placeholder-text">请上传图片并点击检测</p>
                     </div>
                 </div>
             </section>

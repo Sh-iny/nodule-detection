@@ -11,6 +11,7 @@ let currentNodules = [];
 let statsChart = null;
 let preprocessEnabled = false;    // 自适应预处理状态
 let segmentationEnabled = false;   // 肺部分割状态
+let preprocessAutoMode = true;     // 预处理参数自动模式（自动根据图像计算）
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -85,29 +86,40 @@ function initEventListeners() {
         });
     }
 
-    // 自适应预处理勾选
+    // 自适应预处理勾选 - 显示/隐藏参数面板
     const preprocessToggle = document.getElementById('preprocessToggle');
     if (preprocessToggle) {
         preprocessToggle.addEventListener('change', (e) => {
             window.preprocessEnabled = e.target.checked;
             preprocessEnabled = e.target.checked;
-            togglePreprocessPanel();
+            // 勾选预处理时自动进入自动模式
+            if (e.target.checked) {
+                preprocessAutoMode = true;
+            }
+            const paramsPanel = document.getElementById('preprocessParams');
+            if (paramsPanel) {
+                paramsPanel.classList.toggle('hidden', !e.target.checked);
+            }
         });
     }
 
-    // Gamma 滑块
+    // Gamma 滑块 - 手动调整时开启手动模式
     const gammaSlider = document.getElementById('gammaSlider');
     if (gammaSlider) {
         gammaSlider.addEventListener('input', (e) => {
+            preprocessAutoMode = false;
             document.getElementById('gammaValue').textContent = e.target.value;
+            document.getElementById('gammaAutoBtn').classList.add('active');
         });
     }
 
-    // CLAHE Clip 滑块
+    // CLAHE Clip 滑块 - 手动调整时开启手动模式
     const clipSlider = document.getElementById('clipSlider');
     if (clipSlider) {
         clipSlider.addEventListener('input', (e) => {
+            preprocessAutoMode = false;
             document.getElementById('clipValue').textContent = e.target.value;
+            document.getElementById('clipAutoBtn').classList.add('active');
         });
     }
 }
@@ -171,7 +183,15 @@ async function loadImageByIndex(index) {
         } else {
             await canvas.loadImage(file);
         }
+
+        // 更新肺部轮廓（肺部分割模式）
+        if (result) {
+            window.currentLungContours = result.lung_contours || [];
+        }
         updateImageCounter();
+
+        // 加载完成后重绘轮廓
+        afterImageLoad();
 
         // 显示当前图片对应的检测结果（如果有）
         if (batchResults[index]) {
@@ -183,6 +203,15 @@ async function loadImageByIndex(index) {
     } catch (error) {
         console.error('Failed to load image:', error);
         alert('图片加载失败');
+    }
+}
+
+// 在图片加载完成后绘制覆盖物
+function afterImageLoad() {
+    if (!originalImage) return;
+    // 重绘肺部轮廓（如果有）
+    if (window.currentLungContours && window.currentLungContours.length > 0) {
+        canvas.drawLungContours();
     }
 }
 
@@ -238,11 +267,15 @@ async function startDetection() {
     loadingOverlay.classList.remove('hidden');
 
     try {
-        // 获取预处理参数
-        const gammaSlider = document.getElementById('gammaSlider');
-        const clipSlider = document.getElementById('clipSlider');
-        const gamma = gammaSlider ? parseFloat(gammaSlider.value) : null;
-        const clipLimit = clipSlider ? parseFloat(clipSlider.value) : null;
+        // 获取预处理参数（自动模式下传 null 让后端计算）
+        let gamma = null;
+        let clipLimit = null;
+        if (!preprocessAutoMode) {
+            const gammaSlider = document.getElementById('gammaSlider');
+            const clipSlider = document.getElementById('clipSlider');
+            gamma = gammaSlider ? parseFloat(gammaSlider.value) : null;
+            clipLimit = clipSlider ? parseFloat(clipSlider.value) : null;
+        }
 
         // 批量检测 - 使用一次请求发送所有图片
         let statusText = '检测中...';
@@ -260,9 +293,33 @@ async function startDetection() {
             batchResults = batchResponse.results;
             batchId = batchResponse.batch_id;
 
+            // 先更新参数面板和轮廓（仅在启用预处理时更新）
+            const firstResult = batchResults[0];
+            if (firstResult) {
+                if (preprocessEnabled) {
+                    if ('applied_gamma' in firstResult) {
+                        const gv = document.getElementById('gammaValue');
+                        const gs = document.getElementById('gammaSlider');
+                        if (gv) gv.textContent = firstResult.applied_gamma;
+                        if (gs) gs.value = firstResult.applied_gamma;
+                    }
+                    if ('applied_clip_limit' in firstResult) {
+                        const cv = document.getElementById('clipValue');
+                        const cs = document.getElementById('clipSlider');
+                        if (cv) cv.textContent = firstResult.applied_clip_limit;
+                        if (cs) cs.value = firstResult.applied_clip_limit;
+                        document.getElementById('preprocessParams').classList.remove('hidden');
+                    }
+                }
+                // 确保预处理勾选状态
+                document.getElementById('preprocessToggle').checked = preprocessEnabled;
+                // 设置肺部轮廓
+                window.currentLungContours = firstResult.lung_contours || [];
+            }
+
             // 显示第一张的结果
             currentIndex = 0;
-            loadImageByIndex(0);
+            await loadImageByIndex(0);
             displayResult(batchResults[0], 0);
 
             loadHistory();  // 刷新历史记录
@@ -824,30 +881,24 @@ async function loadModelList() {
     }
 }
 
-// 切换预处理参数面板显示
-function togglePreprocessPanel() {
-    const panel = document.getElementById('preprocessPanel');
-    if (panel) {
-        panel.classList.toggle('hidden');
-    }
-}
-
-// 重置 Gamma 为自动
+// 重置 Gamma 为自动（让后端根据图像自动计算）
 function resetGamma() {
+    if (!document.getElementById('gammaAutoBtn').classList.contains('active')) return;
+    preprocessAutoMode = true;
     const gammaSlider = document.getElementById('gammaSlider');
-    if (gammaSlider) {
-        gammaSlider.value = 1.0;
-        document.getElementById('gammaValue').textContent = '1.0';
-    }
+    if (gammaSlider) gammaSlider.value = 1.0;
+    document.getElementById('gammaValue').textContent = '-';
+    document.getElementById('gammaAutoBtn').classList.remove('active');
 }
 
-// 重置 CLAHE Clip 为自动
+// 重置 CLAHE Clip 为自动（让后端根据图像自动计算）
 function resetClip() {
+    if (!document.getElementById('clipAutoBtn').classList.contains('active')) return;
+    preprocessAutoMode = true;
     const clipSlider = document.getElementById('clipSlider');
-    if (clipSlider) {
-        clipSlider.value = 2.0;
-        document.getElementById('clipValue').textContent = '2.0';
-    }
+    if (clipSlider) clipSlider.value = 2.0;
+    document.getElementById('clipValue').textContent = '-';
+    document.getElementById('clipAutoBtn').classList.remove('active');
 }
 
 // 打开设置弹窗
@@ -939,7 +990,6 @@ window.clearAllHistory = clearAllHistory;
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.saveSettings = saveSettings;
-window.togglePreprocessPanel = togglePreprocessPanel;
 window.resetGamma = resetGamma;
 window.resetClip = resetClip;
 Object.defineProperty(window, 'currentNodules', {
@@ -953,6 +1003,10 @@ Object.defineProperty(window, 'preprocessEnabled', {
 Object.defineProperty(window, 'segmentationEnabled', {
     get: () => segmentationEnabled,
     set: (v) => { segmentationEnabled = v; }
+});
+Object.defineProperty(window, 'preprocessAutoMode', {
+    get: () => preprocessAutoMode,
+    set: (v) => { preprocessAutoMode = v; }
 });
 
 // 导出所有带标注的图片为ZIP

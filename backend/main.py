@@ -181,7 +181,15 @@ async def detect(image: UploadFile = File(...), preprocess: bool = False, segmen
         batch_id = db.get_next_batch_id()
         record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
 
-        return {
+        # 计算实际使用的参数（用于前端显示）
+        gray = cv2.cvtColor(cv2.imread(tmp_path), cv2.COLOR_BGR2GRAY)
+        mean = np.mean(gray)
+        std = np.std(gray)
+        print(f"[Detect] image mean={mean:.1f}, std={std:.1f}")
+        actual_gamma = gamma if gamma is not None else (1.4 if mean > 180 else 1.2 if mean > 150 else 0.8 if mean < 80 else 1.0)
+        actual_clip = clip_limit if clip_limit is not None else (3.0 if std < 40 else 2.0 if std < 60 else 1.5)
+
+        result = {
             "success": True,
             "nodules": [n.to_dict() for n in nodules],
             "count": len(nodules),
@@ -191,8 +199,15 @@ async def detect(image: UploadFile = File(...), preprocess: bool = False, segmen
             "segmentation_applied": segmentation and segmentor.session is not None,
             "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
             "lung_contours": lung_contours,
-            "processed_image_data": processed_image_data
+            "processed_image_data": processed_image_data,
         }
+
+        # 仅在启用预处理时返回计算出的参数值
+        if preprocess:
+            result["applied_gamma"] = round(actual_gamma, 2)
+            result["applied_clip_limit"] = round(actual_clip, 2)
+
+        return result
     finally:
         os.unlink(tmp_path)
 
@@ -256,8 +271,10 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
 
             # 优先级2：肺部分割
             if segmentation and segmentor.session is not None:
+                print(f"[Batch] Segmentation enabled, session: {segmentor.session is not None}")
                 mask, segmentation_elapsed_ms = segmentor.segment(image_array)
                 lung_contours = segmentor.get_lung_contours(mask)
+                print(f"[Batch] Got {len(lung_contours)} lung contours, mask sum: {mask.sum()}")
 
                 detect_path = processed_path if preprocess else tmp_path
                 nodules, elapsed_ms = detector.detect(detect_path)
@@ -288,7 +305,7 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
                     processed_bytes = f.read()
                 processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
-            results.append({
+            result_item = {
                 "success": True,
                 "nodules": [n.to_dict() for n in nodules],
                 "count": len(nodules),
@@ -298,8 +315,20 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
                 "segmentation_applied": segmentation and segmentor.session is not None,
                 "segmentation_elapsed_ms": round(segmentation_elapsed_ms, 2),
                 "lung_contours": lung_contours,
-                "processed_image_data": processed_image_data
-            })
+                "processed_image_data": processed_image_data,
+            }
+
+            # 仅在启用预处理时返回计算出的参数值
+            if preprocess:
+                gray = cv2.cvtColor(cv2.imread(tmp_path), cv2.COLOR_BGR2GRAY)
+                mean = np.mean(gray)
+                std = np.std(gray)
+                actual_gamma = gamma if gamma is not None else (1.4 if mean > 180 else 1.2 if mean > 150 else 0.8 if mean < 80 else 1.0)
+                actual_clip = clip_limit if clip_limit is not None else (3.0 if std < 40 else 2.0 if std < 60 else 1.5)
+                result_item["applied_gamma"] = round(actual_gamma, 2)
+                result_item["applied_clip_limit"] = round(actual_clip, 2)
+
+            results.append(result_item)
         finally:
             os.unlink(tmp_path)
 

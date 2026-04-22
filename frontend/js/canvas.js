@@ -196,11 +196,12 @@ function drawNodules(nodules) {
     // 清空画布
     overlayCtx.clearRect(0, 0, displayWidth, displayHeight);
 
-    // 先绘制肺部轮廓（如果有轮廓数据就绘制，不管勾选状态）
+    // 先绘制肺部轮廓（始终绘制，不管有没有结节）
     if (window.currentLungContours && window.currentLungContours.length > 0) {
         drawLungContours();
     }
 
+    // 无结节时不绘制标注
     if (!nodules || nodules.length === 0) return;
 
     // 计算缩放比例（从原图到显示尺寸）
