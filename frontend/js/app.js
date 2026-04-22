@@ -60,6 +60,55 @@ function initDropZone() {
     });
 }
 
+// 防抖函数
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// 预览函数 - 使用当前滑块参数预览图像
+let isPreviewLoading = false;
+
+async function previewWithParams() {
+    if (files.length === 0 || !originalImage) return;
+    if (preprocessAutoMode) return;  // 自动模式下不预览
+
+    const gamma = parseFloat(document.getElementById('gammaSlider').value);
+    const clipLimit = parseFloat(document.getElementById('clipSlider').value);
+
+    isPreviewLoading = true;
+    showPreviewLoading(true);
+
+    try {
+        const result = await api.previewPreprocess(files[currentIndex], gamma, clipLimit);
+        if (result.processed_image_data) {
+            await canvas.loadImageFromDataUrl(result.processed_image_data);
+        }
+    } catch (error) {
+        console.error('Preview failed:', error);
+    } finally {
+        isPreviewLoading = false;
+        showPreviewLoading(false);
+    }
+}
+
+function showPreviewLoading(show) {
+    const overlay = document.getElementById('previewOverlay');
+    if (overlay) {
+        if (show) {
+            overlay.classList.remove('hidden');
+        } else {
+            overlay.classList.add('hidden');
+        }
+    }
+}
+
+// 防抖版本的预览（300ms 防抖）
+const debouncedPreview = debounce(previewWithParams, 300);
+
 // 初始化事件监听
 function initEventListeners() {
     // 检测按钮
@@ -68,58 +117,96 @@ function initEventListeners() {
         btnDetect.addEventListener('click', startDetection);
     }
 
-    // 肺部分割勾选 - 切换时立即更新显示
+    // 肺部分割勾选 - 切换时立即处理并显示轮廓
     const processToggle = document.getElementById('processModuleToggle');
     if (processToggle) {
-        processToggle.addEventListener('change', (e) => {
+        processToggle.addEventListener('change', async (e) => {
             window.segmentationEnabled = e.target.checked;
             segmentationEnabled = e.target.checked;
-            // 如果当前有图像，重新显示（带或不带轮廓）
-            if (files.length > 0 && batchResults.length > 0) {
-                if (segmentationEnabled) {
-                    window.currentLungContours = batchResults[currentIndex].lung_contours || [];
-                } else {
+
+            if (files.length === 0) return;
+
+            // 保存当前的结节数据
+            const nodulesToDraw = currentNodules || [];
+
+            if (e.target.checked) {
+                // 勾选时：获取分割轮廓
+                try {
+                    let gamma = null;
+                    let clipLimit = null;
+                    if (!preprocessAutoMode) {
+                        gamma = parseFloat(document.getElementById('gammaSlider').value);
+                        clipLimit = parseFloat(document.getElementById('clipSlider').value);
+                    }
+                    const result = await api.previewSegmentation(files[currentIndex], preprocessEnabled, gamma, clipLimit);
+                    window.currentLungContours = result.lung_contours || [];
+                } catch (error) {
+                    console.error('Segmentation preview failed:', error);
                     window.currentLungContours = [];
                 }
-                canvas.drawNodules(currentNodules);
+            } else {
+                // 取消勾选时：隐藏轮廓
+                window.currentLungContours = [];
+            }
+
+            // 统一重绘（由 drawNodules 内部处理轮廓和结节的绘制顺序）
+            if (originalImage) {
+                canvas.drawNodules(nodulesToDraw);
             }
         });
     }
 
-    // 自适应预处理勾选 - 显示/隐藏参数面板
+    // 自适应预处理勾选 - 显示/隐藏参数面板，并自动处理图像
     const preprocessToggle = document.getElementById('preprocessToggle');
     if (preprocessToggle) {
-        preprocessToggle.addEventListener('change', (e) => {
+        preprocessToggle.addEventListener('change', async (e) => {
             window.preprocessEnabled = e.target.checked;
             preprocessEnabled = e.target.checked;
-            // 勾选预处理时自动进入自动模式
-            if (e.target.checked) {
-                preprocessAutoMode = true;
-            }
             const paramsPanel = document.getElementById('preprocessParams');
             if (paramsPanel) {
                 paramsPanel.classList.toggle('hidden', !e.target.checked);
             }
+
+            if (e.target.checked) {
+                // 勾选时：自动应用参数并预览
+                if (files.length > 0) {
+                    await applyAutoParams();
+                }
+            } else {
+                // 取消勾选时：恢复原始图像并重绘
+                preprocessAutoMode = false;
+                document.getElementById('gammaValue').textContent = '-';
+                document.getElementById('clipValue').textContent = '-';
+                document.getElementById('gammaAutoBtn').classList.remove('active');
+                document.getElementById('clipAutoBtn').classList.remove('active');
+                if (files.length > 0) {
+                    await canvas.loadImage(files[currentIndex]);
+                    // 恢复后重绘结节和轮廓
+                    canvas.drawNodules(currentNodules);
+                }
+            }
         });
     }
 
-    // Gamma 滑块 - 手动调整时开启手动模式
+    // Gamma 滑块 - 手动调整时开启手动模式并预览
     const gammaSlider = document.getElementById('gammaSlider');
     if (gammaSlider) {
         gammaSlider.addEventListener('input', (e) => {
             preprocessAutoMode = false;
             document.getElementById('gammaValue').textContent = e.target.value;
             document.getElementById('gammaAutoBtn').classList.add('active');
+            debouncedPreview();
         });
     }
 
-    // CLAHE Clip 滑块 - 手动调整时开启手动模式
+    // CLAHE Clip 滑块 - 手动调整时开启手动模式并预览
     const clipSlider = document.getElementById('clipSlider');
     if (clipSlider) {
         clipSlider.addEventListener('input', (e) => {
             preprocessAutoMode = false;
             document.getElementById('clipValue').textContent = e.target.value;
             document.getElementById('clipAutoBtn').classList.add('active');
+            debouncedPreview();
         });
     }
 }
@@ -187,6 +274,8 @@ async function loadImageByIndex(index) {
         // 更新肺部轮廓（肺部分割模式）
         if (result) {
             window.currentLungContours = result.lung_contours || [];
+        } else {
+            window.currentLungContours = [];
         }
         updateImageCounter();
 
@@ -197,6 +286,7 @@ async function loadImageByIndex(index) {
         if (batchResults[index]) {
             displayResult(batchResults[index], index);
         } else {
+            currentNodules = [];
             canvas.clearOverlay();
             document.getElementById('resultPanel').innerHTML = '<p class="placeholder-text">点击"开始检测"进行肺结节检测</p>';
         }
@@ -684,9 +774,9 @@ async function loadStats() {
                 }
             });
 
-            // 计算Y轴间隔，最多10个刻度
+            // 计算Y轴间隔，最多6个刻度
             const maxCount = Math.max(...counts, 0);
-            const maxTicks = 10;
+            const maxTicks = 6;
             const interval = Math.ceil(maxCount / (maxTicks - 1)) || 1;
 
             statsChart.setOption({
@@ -754,6 +844,7 @@ function initStatsChart() {
         yAxis: {
             type: 'value',
             min: 0,
+            max: 6,
             interval: 1,
             axisLabel: {
                 fontSize: 10,
@@ -885,8 +976,10 @@ async function loadModelList() {
 function resetGamma() {
     if (!document.getElementById('gammaAutoBtn').classList.contains('active')) return;
     preprocessAutoMode = true;
-    const gammaSlider = document.getElementById('gammaSlider');
-    if (gammaSlider) gammaSlider.value = 1.0;
+    // 恢复原始图像
+    if (files.length > 0) {
+        canvas.loadImage(files[currentIndex]);
+    }
     document.getElementById('gammaValue').textContent = '-';
     document.getElementById('gammaAutoBtn').classList.remove('active');
 }
@@ -895,10 +988,52 @@ function resetGamma() {
 function resetClip() {
     if (!document.getElementById('clipAutoBtn').classList.contains('active')) return;
     preprocessAutoMode = true;
-    const clipSlider = document.getElementById('clipSlider');
-    if (clipSlider) clipSlider.value = 2.0;
+    // 恢复原始图像
+    if (files.length > 0) {
+        canvas.loadImage(files[currentIndex]);
+    }
     document.getElementById('clipValue').textContent = '-';
     document.getElementById('clipAutoBtn').classList.remove('active');
+}
+
+// 点击自动按钮时获取后端计算的参数并预览
+async function applyAutoParams() {
+    if (files.length === 0) return;
+
+    try {
+        const params = await api.calcPreprocessParams(files[currentIndex]);
+        if (params.gamma !== undefined) {
+            const gammaSlider = document.getElementById('gammaSlider');
+            const gammaValue = document.getElementById('gammaValue');
+            if (gammaSlider) gammaSlider.value = params.gamma;
+            if (gammaValue) gammaValue.textContent = params.gamma;
+        }
+        if (params.clip_limit !== undefined) {
+            const clipSlider = document.getElementById('clipSlider');
+            const clipValue = document.getElementById('clipValue');
+            if (clipSlider) clipSlider.value = params.clip_limit;
+            if (clipValue) clipValue.textContent = params.clip_limit;
+        }
+
+        // 按钮变灰（不在手动模式）
+        document.getElementById('gammaAutoBtn').classList.remove('active');
+        document.getElementById('clipAutoBtn').classList.remove('active');
+        preprocessAutoMode = true;
+
+        // 使用计算出的参数预览图像
+        const gamma = parseFloat(document.getElementById('gammaSlider').value);
+        const clipLimit = parseFloat(document.getElementById('clipSlider').value);
+
+        showPreviewLoading(true);
+        const result = await api.previewPreprocess(files[currentIndex], gamma, clipLimit);
+        if (result.processed_image_data) {
+            await canvas.loadImageFromDataUrl(result.processed_image_data);
+        }
+        showPreviewLoading(false);
+    } catch (error) {
+        console.error('Failed to get auto params:', error);
+        showPreviewLoading(false);
+    }
 }
 
 // 打开设置弹窗
@@ -992,6 +1127,7 @@ window.closeSettings = closeSettings;
 window.saveSettings = saveSettings;
 window.resetGamma = resetGamma;
 window.resetClip = resetClip;
+window.applyAutoParams = applyAutoParams;
 Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }

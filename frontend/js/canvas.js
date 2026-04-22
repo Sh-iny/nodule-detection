@@ -122,6 +122,7 @@ function loadImageFromDataUrl(dataUrl) {
         img.onload = () => {
             originalImage = img;
             resizeCanvas();
+            clearOverlay();  // 清空覆盖层
             document.getElementById('imagePlaceholder').classList.add('hidden');
             resolve(img);
         };

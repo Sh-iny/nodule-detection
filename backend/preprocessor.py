@@ -49,13 +49,7 @@ def adaptive_preprocess_xray(image, gamma=None, clip_limit=None):
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
     img_clahe = clahe.apply(img_gamma)
 
-    # 轻微标准化（防止极端情况）
-    img = img_clahe.astype(np.float32)
-    img = (img - img.mean()) / (img.std() + 1e-6)
-    img = (img * 0.2 + 0.5) * 255
-    img = np.clip(img, 0, 255).astype(np.uint8)
-
-    # 转回 3 通道（YOLO 需要）
-    img_out = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    # 直接返回 CLAHE 处理后的图像（不做标准化，保留 gamma 和 CLAHE 效果）
+    img_out = cv2.cvtColor(img_clahe, cv2.COLOR_GRAY2BGR)
 
     return img_out

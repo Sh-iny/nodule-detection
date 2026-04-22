@@ -55,16 +55,24 @@
                         </label>
                         <div id="preprocessParams" class="module-params hidden">
                             <div class="param-row">
-                                <label>Gamma</label>
-                                <button id="gammaAutoBtn" class="btn btn-small btn-auto" onclick="resetGamma()">自动</button>
-                                <span id="gammaValue">-</span>
-                                <input type="range" id="gammaSlider" min="0.1" max="3.0" step="0.1" value="1.0">
+                                <div class="param-header">
+                                    <label>Gamma</label>
+                                    <button id="gammaAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams()">自动</button>
+                                    <span id="gammaValue" class="value-display">-</span>
+                                </div>
+                                <div class="slider-row">
+                                    <input type="range" id="gammaSlider" min="0.1" max="3.0" step="0.1" value="1.0">
+                                </div>
                             </div>
                             <div class="param-row">
-                                <label>CLAHE</label>
-                                <button id="clipAutoBtn" class="btn btn-small btn-auto" onclick="resetClip()">自动</button>
-                                <span id="clipValue">-</span>
-                                <input type="range" id="clipSlider" min="0.5" max="5.0" step="0.1" value="2.0">
+                                <div class="param-header">
+                                    <label>CLAHE</label>
+                                    <button id="clipAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams()">自动</button>
+                                    <span id="clipValue" class="value-display">-</span>
+                                </div>
+                                <div class="slider-row">
+                                    <input type="range" id="clipSlider" min="0.5" max="5.0" step="0.1" value="2.0">
+                                </div>
                             </div>
                         </div>
                         <label class="checkbox-label">
@@ -93,6 +101,10 @@
                         <div id="loadingOverlay" class="loading-overlay hidden">
                             <div class="spinner"></div>
                             <p>检测中...</p>
+                        </div>
+                        <div id="previewOverlay" class="loading-overlay hidden">
+                            <div class="spinner"></div>
+                            <p>处理中...</p>
                         </div>
                     </div>
                     <div id="imageNavigation" class="image-navigation hidden">

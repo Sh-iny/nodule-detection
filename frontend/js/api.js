@@ -85,6 +85,84 @@ async function detectImages(files, preprocess = false, segmentation = false, gam
     }
 }
 
+// 预处理预览
+async function previewPreprocess(file, gamma, clipLimit) {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const params = new URLSearchParams();
+    params.append('gamma', gamma.toString());
+    params.append('clip_limit', clipLimit.toString());
+
+    try {
+        const response = await fetch(`${API_BASE}/api/preprocess/preview?${params.toString()}`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Preview failed:', error);
+        throw error;
+    }
+}
+
+// 计算预处理参数
+async function calcPreprocessParams(file) {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/preprocess/calc`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Calc params failed:', error);
+        throw error;
+    }
+}
+
+// 分割预览
+async function previewSegmentation(file, preprocess = false, gamma = null, clipLimit = null) {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const params = new URLSearchParams();
+    if (preprocess) params.append('preprocess', 'true');
+    if (gamma !== null) params.append('gamma', gamma.toString());
+    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
+
+    try {
+        const response = await fetch(`${API_BASE}/api/segment/preview?${params.toString()}`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Segmentation preview failed:', error);
+        throw error;
+    }
+}
+
 // 获取检测历史
 async function getHistory() {
     try {
@@ -221,6 +299,9 @@ window.api = {
     checkHealth,
     detectImage,
     detectImages,
+    previewPreprocess,
+    calcPreprocessParams,
+    previewSegmentation,
     getHistory,
     getRecord,
     deleteRecord,

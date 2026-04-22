@@ -116,6 +116,105 @@ async def health():
     }
 
 
+@app.post("/api/preprocess/preview")
+async def preprocess_preview(image: UploadFile = File(...), gamma: float = Query(1.0, ge=0.1, le=3.0), clip_limit: float = Query(2.0, ge=0.5, le=5.0)):
+    """预处理预览，只返回处理后的图像（不做检测）"""
+    if image.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    content = await image.read()
+    suffix = ".jpg" if image.content_type == "image/jpeg" else ".png"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        image_array = cv2.imread(tmp_path)
+        processed = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+
+        # 返回处理后的图像（不保存文件）
+        _, buffer = cv2.imencode('.jpg', processed)
+        processed_bytes = buffer.tobytes()
+        processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
+
+        return {"processed_image_data": processed_image_data}
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/preprocess/calc")
+async def preprocess_calc(image: UploadFile = File(...)):
+    """根据图像计算预处理参数"""
+    if image.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    content = await image.read()
+    suffix = ".jpg" if image.content_type == "image/jpeg" else ".png"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        image_array = cv2.imread(tmp_path)
+        gray = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
+        mean = np.mean(gray)
+        std = np.std(gray)
+
+        # 计算 gamma
+        if mean > 180:
+            gamma = 1.4
+        elif mean > 150:
+            gamma = 1.2
+        elif mean < 80:
+            gamma = 0.8
+        else:
+            gamma = 1.0
+
+        # 计算 CLAHE clip limit
+        if std < 40:
+            clip_limit = 3.0
+        elif std < 60:
+            clip_limit = 2.0
+        else:
+            clip_limit = 1.5
+
+        return {"gamma": gamma, "clip_limit": clip_limit}
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/segment/preview")
+async def segment_preview(image: UploadFile = File(...), preprocess: bool = False,
+                         gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
+    """肺部分割预览，只返回分割轮廓（不做检测）"""
+    if segmentor.session is None:
+        raise HTTPException(status_code=500, detail="Segmentor not loaded")
+
+    if image.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    content = await image.read()
+    suffix = ".jpg" if image.content_type == "image/jpeg" else ".png"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        image_array = cv2.imread(tmp_path)
+
+        # 预处理
+        if preprocess:
+            image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+
+        # 分割
+        mask, elapsed_ms = segmentor.segment(image_array)
+        lung_contours = segmentor.get_lung_contours(mask)
+
+        return {"lung_contours": lung_contours, "elapsed_ms": round(elapsed_ms, 2)}
+    finally:
+        os.unlink(tmp_path)
+
+
 @app.post("/api/detect")
 async def detect(image: UploadFile = File(...), preprocess: bool = False, segmentation: bool = False,
                 gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
@@ -264,10 +363,16 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
             segmentation_elapsed_ms = 0
 
             # 优先级1：自适应预处理
+            processed_image_data = None
+            processed_path = None
             if preprocess:
                 image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
                 processed_path = tmp_path + ".processed.jpg"
                 cv2.imwrite(processed_path, image_array)
+                # 立即读取处理后的图像数据（在删除文件之前）
+                with open(processed_path, 'rb') as f:
+                    processed_bytes = f.read()
+                processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
             # 优先级2：肺部分割
             if segmentation and segmentor.session is not None:
@@ -297,13 +402,6 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
             image_data = f"data:{image.content_type};base64,{image_base64}"
             result_json = json.dumps([n.to_dict() for n in nodules])
             record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
-
-            processed_path = tmp_path + ".processed.jpg" if preprocess else None
-            processed_image_data = None
-            if preprocess and processed_path and os.path.exists(processed_path):
-                with open(processed_path, 'rb') as f:
-                    processed_bytes = f.read()
-                processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
             result_item = {
                 "success": True,
