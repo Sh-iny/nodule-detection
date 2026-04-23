@@ -178,23 +178,23 @@ function initEventListeners() {
             }
 
             if (e.target.checked) {
-                // 勾选时：对所有图片应用参数并预览
+                // 勾选时：用自动参数预览，按钮保持灰色
                 if (files.length > 0) {
                     showPreviewLoading(true);
                     try {
-                        // 先获取自动参数
+                        // 获取自动参数
                         const params = await api.calcPreprocessParams(files[currentIndex]);
                         const gamma = params.gamma || 1.0;
                         const clipLimit = params.clip_limit || 2.0;
 
-                        // 更新UI
+                        // 更新UI - 按钮保持灰色（自动模式）
                         document.getElementById('gammaSlider').value = gamma;
                         document.getElementById('gammaValue').textContent = gamma;
                         document.getElementById('clipSlider').value = clipLimit;
                         document.getElementById('clipValue').textContent = clipLimit;
-                        document.getElementById('gammaAutoBtn').classList.add('active');
-                        document.getElementById('clipAutoBtn').classList.add('active');
-                        preprocessAutoMode = true;
+                        document.getElementById('gammaAutoBtn').classList.remove('active');
+                        document.getElementById('clipAutoBtn').classList.remove('active');
+                        preprocessAutoMode = true; // 自动模式
 
                         // 对所有图片预览
                         for (let i = 0; i < files.length; i++) {
@@ -233,24 +233,24 @@ function initEventListeners() {
         });
     }
 
-    // Gamma 滑块 - 手动调整时开启手动模式并预览
+    // Gamma 滑块 - 手动调整时开启手动模式，按钮变蓝
     const gammaSlider = document.getElementById('gammaSlider');
     if (gammaSlider) {
         gammaSlider.addEventListener('input', (e) => {
             preprocessAutoMode = false;
             document.getElementById('gammaValue').textContent = e.target.value;
-            document.getElementById('gammaAutoBtn').classList.add('active');
+            document.getElementById('gammaAutoBtn').classList.add('active'); // 变蓝
             debouncedPreview();
         });
     }
 
-    // CLAHE Clip 滑块 - 手动调整时开启手动模式并预览
+    // CLAHE Clip 滑块 - 手动调整时开启手动模式，按钮变蓝
     const clipSlider = document.getElementById('clipSlider');
     if (clipSlider) {
         clipSlider.addEventListener('input', (e) => {
             preprocessAutoMode = false;
             document.getElementById('clipValue').textContent = e.target.value;
-            document.getElementById('clipAutoBtn').classList.add('active');
+            document.getElementById('clipAutoBtn').classList.add('active'); // 变蓝
             debouncedPreview();
         });
     }
@@ -764,7 +764,19 @@ async function removeRecord(id) {
 
 // 关闭详情弹窗
 function closeDetailModal() {
-    document.getElementById('detailModal').classList.add('hidden');
+    const modal = document.getElementById('detailModal');
+    const content = modal.querySelector('.modal-content');
+    if (modal && content) {
+        modal.style.animation = 'modalFadeOut 0.3s var(--ease-standard) forwards';
+        content.style.animation = 'modalSlideOut 0.3s var(--ease-standard) forwards';
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.animation = '';
+            content.style.animation = '';
+        }, 300);
+    } else if (modal) {
+        modal.classList.add('hidden');
+    }
 }
 
 // 清空所有历史记录
@@ -934,7 +946,7 @@ function formatTime(dateStr) {
 
 // ==================== 设置相关 ====================
 
-let currentTheme = localStorage.getItem('theme') || 'light';
+let currentTheme = localStorage.getItem('theme') || 'dark';
 
 // 初始化设置
 async function initSettings() {
@@ -953,10 +965,11 @@ function applyTheme(theme) {
     currentTheme = theme;
     localStorage.setItem('theme', theme);
 
-    if (theme === 'dark') {
-        document.documentElement.classList.add('dark-theme');
+    // 新设计：默认是深色主题，light-theme 类用于浅色模式
+    if (theme === 'light') {
+        document.documentElement.classList.add('light-theme');
     } else {
-        document.documentElement.classList.remove('dark-theme');
+        document.documentElement.classList.remove('light-theme');
     }
 
     // 更新主题选择框
@@ -1065,27 +1078,42 @@ function resetClip() {
 }
 
 // 点击自动按钮时获取后端计算的参数并预览
-async function applyAutoParams() {
+async function applyAutoParams(paramType) {
     if (files.length === 0) return;
 
     try {
         const params = await api.calcPreprocessParams(files[currentIndex]);
-        if (params.gamma !== undefined) {
+
+        if (paramType === 'gamma' && params.gamma !== undefined) {
             const gammaSlider = document.getElementById('gammaSlider');
             const gammaValue = document.getElementById('gammaValue');
             if (gammaSlider) gammaSlider.value = params.gamma;
             if (gammaValue) gammaValue.textContent = params.gamma;
-        }
-        if (params.clip_limit !== undefined) {
+            document.getElementById('gammaAutoBtn').classList.remove('active');
+        } else if (paramType === 'clip' && params.clip_limit !== undefined) {
             const clipSlider = document.getElementById('clipSlider');
             const clipValue = document.getElementById('clipValue');
             if (clipSlider) clipSlider.value = params.clip_limit;
             if (clipValue) clipValue.textContent = params.clip_limit;
+            document.getElementById('clipAutoBtn').classList.remove('active');
+        } else if (paramType === 'all') {
+            // 全部自动
+            if (params.gamma !== undefined) {
+                const gammaSlider = document.getElementById('gammaSlider');
+                const gammaValue = document.getElementById('gammaValue');
+                if (gammaSlider) gammaSlider.value = params.gamma;
+                if (gammaValue) gammaValue.textContent = params.gamma;
+            }
+            if (params.clip_limit !== undefined) {
+                const clipSlider = document.getElementById('clipSlider');
+                const clipValue = document.getElementById('clipValue');
+                if (clipSlider) clipSlider.value = params.clip_limit;
+                if (clipValue) clipValue.textContent = params.clip_limit;
+            }
+            document.getElementById('gammaAutoBtn').classList.remove('active');
+            document.getElementById('clipAutoBtn').classList.remove('active');
         }
 
-        // 按钮变灰（不在手动模式）
-        document.getElementById('gammaAutoBtn').classList.remove('active');
-        document.getElementById('clipAutoBtn').classList.remove('active');
         preprocessAutoMode = true;
 
         // 使用计算出的参数预览图像
@@ -1117,7 +1145,16 @@ async function openSettings() {
 // 关闭设置弹窗
 function closeSettings() {
     const modal = document.getElementById('settingsModal');
-    if (modal) {
+    const content = modal ? modal.querySelector('.modal-content') : null;
+    if (modal && content) {
+        modal.style.animation = 'modalFadeOut 0.3s var(--ease-standard) forwards';
+        content.style.animation = 'modalSlideOut 0.3s var(--ease-standard) forwards';
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.animation = '';
+            content.style.animation = '';
+        }, 300);
+    } else if (modal) {
         modal.classList.add('hidden');
     }
 }

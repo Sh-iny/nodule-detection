@@ -23,7 +23,7 @@
         <!-- 主内容区 -->
         <main class="main-content">
             <!-- 左侧上传和功能区 -->
-            <section class="left-panel">
+            <section class="left-panel fade-in-up">
                 <div class="card">
                     <h2>图片上传</h2>
                     <div id="dropZone" class="drop-zone">
@@ -57,7 +57,7 @@
                             <div class="param-row">
                                 <div class="param-header">
                                     <label>Gamma</label>
-                                    <button id="gammaAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams()">自动</button>
+                                    <button id="gammaAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams('gamma')">自动</button>
                                     <span id="gammaValue" class="value-display">-</span>
                                 </div>
                                 <div class="slider-row">
@@ -67,7 +67,7 @@
                             <div class="param-row">
                                 <div class="param-header">
                                     <label>CLAHE</label>
-                                    <button id="clipAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams()">自动</button>
+                                    <button id="clipAutoBtn" class="btn btn-small btn-auto" onclick="applyAutoParams('clip')">自动</button>
                                     <span id="clipValue" class="value-display">-</span>
                                 </div>
                                 <div class="slider-row">
@@ -84,7 +84,7 @@
             </section>
 
             <!-- 中间图像预览区 -->
-            <section class="center-panel">
+            <section class="center-panel fade-in-up">
                 <div class="card image-card">
                     <h2>图像预览</h2>
                     <div id="imageContainer" class="image-container">
@@ -131,7 +131,7 @@
             </section>
 
             <!-- 右侧历史记录和统计 -->
-            <section class="right-panel">
+            <section class="right-panel fade-in-up">
                 <div class="card">
                     <div class="card-header">
                         <h2>检测历史</h2>
