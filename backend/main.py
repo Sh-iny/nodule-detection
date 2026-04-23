@@ -34,7 +34,10 @@ def get_base_path():
 
 BASE_DIR = get_base_path()
 MODEL_DIR = BASE_DIR / "backend" / "models"
-MODEL_PATH = MODEL_DIR / "nodule_model.onnx"
+DETECTION_MODEL_DIR = MODEL_DIR / "detection"
+SEGMENTATION_MODEL_DIR = MODEL_DIR / "segmentation"
+MODEL_PATH = DETECTION_MODEL_DIR / "nodule_model.onnx"
+SEGMENTOR_MODEL_PATH = SEGMENTATION_MODEL_DIR / "unet_lung_smp.onnx"
 FRONTEND_PATH = BASE_DIR / "frontend"
 
 # 数据库路径：打包时放在exe同目录的data文件夹，开发时用项目data文件夹
@@ -492,12 +495,17 @@ async def stats():
 @app.get("/api/models")
 async def get_models():
     """获取可用模型列表"""
-    models = Detector.get_available_models(str(MODEL_DIR))
-    current = detector.current_model_path
-    current_name = Path(current).name if current else None
+    detection_models = Detector.get_available_models(str(DETECTION_MODEL_DIR))
+    detection_current = Path(detector.current_model_path).name if detector.current_model_path else None
+
+    segmentation_models = Segmentor.get_available_models(str(SEGMENTATION_MODEL_DIR))
+    segmentation_current = Path(segmentor.current_model_path).name if segmentor.current_model_path else None
+
     return {
-        "models": models,
-        "current": current_name
+        "detection_models": detection_models,
+        "detection_current": detection_current,
+        "segmentation_models": segmentation_models,
+        "segmentation_current": segmentation_current
     }
 
 
@@ -523,8 +531,8 @@ async def update_settings(conf_threshold: float = None, nms_threshold: float = N
 
 @app.post("/api/model/switch")
 async def switch_model(model_name: str):
-    """切换当前模型"""
-    model_path = MODEL_DIR / model_name
+    """切换当前检测模型"""
+    model_path = DETECTION_MODEL_DIR / model_name
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="Model not found")
     if detector.switch_model(str(model_path)):
@@ -532,12 +540,24 @@ async def switch_model(model_name: str):
     raise HTTPException(status_code=500, detail="Failed to load model")
 
 
+@app.post("/api/segmentation/switch")
+async def switch_segmentation_model(model_name: str):
+    """切换当前分割模型"""
+    model_path = SEGMENTATION_MODEL_DIR / model_name
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Segmentation model not found")
+    if segmentor.load(str(model_path)):
+        return {"success": True, "model": model_name}
+    raise HTTPException(status_code=500, detail="Failed to load segmentation model")
+
+
 def main():
     """启动服务器"""
     print("=" * 50)
     print("Lung Nodule Detection Server")
     print("=" * 50)
-    print(f"Model: {MODEL_PATH}")
+    print(f"Detection Model: {MODEL_PATH}")
+    print(f"Segmentation Model: {SEGMENTOR_MODEL_PATH}")
     print(f"Database: {DB_PATH}")
     print(f"Frontend: {FRONTEND_PATH}")
     print("Server: http://localhost:8080")

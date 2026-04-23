@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 import time
+from pathlib import Path
 from typing import Tuple, List
 
 
@@ -16,6 +17,15 @@ class Segmentor:
         self.input_name = None
         self.output_name = None
         self.img_size = 512
+        self.current_model_path = None
+
+    @staticmethod
+    def get_available_models(models_dir: str) -> list:
+        """获取可用分割模型列表"""
+        models_path = Path(models_dir)
+        if not models_path.exists():
+            return []
+        return sorted([f.name for f in models_path.glob("*.onnx")])
 
     def load(self, model_path: str) -> bool:
         """加载 ONNX 分割模型"""
@@ -26,6 +36,7 @@ class Segmentor:
             )
             self.input_name = self.session.get_inputs()[0].name
             self.output_name = self.session.get_outputs()[0].name
+            self.current_model_path = model_path
             print(f"Segmentation model loaded: {model_path}")
             return True
         except Exception as e:

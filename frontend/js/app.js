@@ -997,24 +997,43 @@ async function loadDetectionSettings() {
 async function loadModelList() {
     try {
         const data = await api.getModels();
-        const modelSelect = document.getElementById('modelSelect');
 
-        if (!modelSelect) return;
+        // 检测模型
+        const detectionModelSelect = document.getElementById('detectionModelSelect');
+        if (detectionModelSelect) {
+            detectionModelSelect.innerHTML = '';
+            if (data.detection_models && data.detection_models.length > 0) {
+                data.detection_models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    if (model === data.detection_current) {
+                        option.selected = true;
+                    }
+                    detectionModelSelect.appendChild(option);
+                });
+            } else {
+                detectionModelSelect.innerHTML = '<option value="">无可用检测模型</option>';
+            }
+        }
 
-        modelSelect.innerHTML = '';
-
-        if (data.models && data.models.length > 0) {
-            data.models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                if (model === data.current) {
-                    option.selected = true;
-                }
-                modelSelect.appendChild(option);
-            });
-        } else {
-            modelSelect.innerHTML = '<option value="">无可用模型</option>';
+        // 分割模型
+        const segmentationModelSelect = document.getElementById('segmentationModelSelect');
+        if (segmentationModelSelect) {
+            segmentationModelSelect.innerHTML = '';
+            if (data.segmentation_models && data.segmentation_models.length > 0) {
+                data.segmentation_models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    if (model === data.segmentation_current) {
+                        option.selected = true;
+                    }
+                    segmentationModelSelect.appendChild(option);
+                });
+            } else {
+                segmentationModelSelect.innerHTML = '<option value="">无可用分割模型</option>';
+            }
         }
     } catch (error) {
         console.error('Failed to load models:', error);
@@ -1108,8 +1127,14 @@ async function saveSettings() {
     const confThreshold = parseFloat(document.getElementById('confThreshold').value);
     const nmsThreshold = parseFloat(document.getElementById('nmsThreshold').value);
     const theme = document.getElementById('themeSelect').value;
-    const modelSelect = document.getElementById('modelSelect');
-    const selectedModel = modelSelect ? modelSelect.value : null;
+
+    // 检测模型
+    const detectionModelSelect = document.getElementById('detectionModelSelect');
+    const selectedDetectionModel = detectionModelSelect ? detectionModelSelect.value : null;
+
+    // 分割模型
+    const segmentationModelSelect = document.getElementById('segmentationModelSelect');
+    const selectedSegmentationModel = segmentationModelSelect ? segmentationModelSelect.value : null;
 
     // 保存检测参数到后端
     try {
@@ -1118,10 +1143,14 @@ async function saveSettings() {
         console.error('Failed to save detection settings:', error);
     }
 
-    // 切换模型
-    if (selectedModel) {
-        const currentModel = modelSelect.options[modelSelect.selectedIndex].text;
-        // 只有模型改变时才切换
+    // 切换检测模型
+    if (selectedDetectionModel) {
+        await api.switchModel(selectedDetectionModel);
+    }
+
+    // 切换分割模型
+    if (selectedSegmentationModel) {
+        await api.switchSegmentationModel(selectedSegmentationModel);
     }
 
     // 应用主题

@@ -44,7 +44,7 @@ class Detector:
         import os
         if not os.path.exists(models_dir):
             return []
-        return [f for f in os.listdir(models_dir) if f.endswith('.onnx')]
+        return sorted([f for f in os.listdir(models_dir) if f.endswith('.onnx')])
 
     def switch_model(self, model_path: str) -> bool:
         """切换当前使用的模型"""

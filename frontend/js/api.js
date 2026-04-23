@@ -260,6 +260,19 @@ async function switchModel(modelName) {
     }
 }
 
+// 切换分割模型
+async function switchSegmentationModel(modelName) {
+    try {
+        const response = await fetch(`${API_BASE}/api/segmentation/switch?model_name=${encodeURIComponent(modelName)}`, {
+            method: 'POST'
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Failed to switch segmentation model:', error);
+        return false;
+    }
+}
+
 // 获取设置
 async function getSettings() {
     try {
@@ -309,6 +322,7 @@ window.api = {
     clearHistory,
     getModels,
     switchModel,
+    switchSegmentationModel,
     getSettings,
     saveSettings
 };
