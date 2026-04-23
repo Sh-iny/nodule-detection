@@ -1277,18 +1277,63 @@ window.exportAllImages = async function() {
         if (!result) continue;
 
         try {
-            const img = await loadImageAsCanvas(file);
+            // 优先使用预处理后的图像数据，否则使用原始文件
+            let img;
+            if (result.processed_image_data) {
+                img = await loadImageFromDataUrlAsync(result.processed_image_data);
+            } else {
+                img = await loadImageAsCanvas(file);
+            }
             const nodules = result.nodules || [];
 
-            // 计算显示尺寸（用于换算标注位置）
-            const container = document.getElementById('imageContainer');
-            const containerWidth = container.clientWidth;
-            const containerHeight = container.clientHeight;
-            const scaleX = containerWidth / img.width;
-            const scaleY = containerHeight / img.height;
-            const fitScale = Math.min(scaleX, scaleY, 1);
+            // 获取该图片的肺部轮廓（如果有）
+            const lungContours = result.lung_contours || [];
 
-            const exportCanvas = canvas.getExportCanvasWithOverlay(img, nodules, img.width, img.height);
+            const exportCanvas = document.createElement('canvas');
+            const exportCtx = exportCanvas.getContext('2d');
+            exportCanvas.width = img.width;
+            exportCanvas.height = img.height;
+
+            // 绘制底图（预处理后的或原始的）
+            exportCtx.drawImage(img, 0, 0, img.width, img.height);
+
+            // 绘制肺部轮廓（如果启用分割）
+            if (lungContours && lungContours.length > 0) {
+                exportCtx.strokeStyle = '#22c55e';
+                exportCtx.lineWidth = 2;
+                lungContours.forEach(contour => {
+                    if (contour.length < 3) return;
+                    exportCtx.beginPath();
+                    exportCtx.moveTo(contour[0][0], contour[0][1]);
+                    for (let j = 1; j < contour.length; j++) {
+                        exportCtx.lineTo(contour[j][0], contour[j][1]);
+                    }
+                    exportCtx.closePath();
+                    exportCtx.stroke();
+                });
+            }
+
+            // 绘制结节标注
+            nodules.forEach((nodule) => {
+                const x = nodule.x;
+                const y = nodule.y;
+                const halfSize = nodule.radius;
+
+                const conf = nodule.confidence;
+                const color = conf >= 0.9 ? '#22c55e' : conf >= 0.7 ? '#f59e0b' : '#ef4444';
+
+                exportCtx.strokeStyle = color;
+                exportCtx.lineWidth = 2;
+                exportCtx.strokeRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2);
+
+                const label = conf > 1
+                    ? `${conf.toFixed(1)}%`
+                    : `${(conf * 100).toFixed(0)}%`;
+                exportCtx.font = 'bold 12px Arial';
+                exportCtx.fillStyle = color;
+                exportCtx.fillText(label, x + halfSize + 4, y - 4);
+            });
+
             const dataUrl = exportCanvas.toDataURL('image/png');
             const base64 = dataUrl.split(',')[1];
 
@@ -1324,5 +1369,15 @@ function loadImageAsCanvas(file) {
         };
         reader.onerror = reject;
         reader.readAsDataURL(file);
+    });
+}
+
+// 从 Data URL 加载 Image 对象
+function loadImageFromDataUrlAsync(dataUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
     });
 }
