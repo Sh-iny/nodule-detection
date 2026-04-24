@@ -88,13 +88,16 @@ class Segmentor:
     def _postprocess(self, output: np.ndarray, orig_h: int, orig_w: int) -> np.ndarray:
         """
         后处理: 将输出转换为二值化 mask
+        支持单通道 sigmoid 输出和双通道 softmax 输出
         """
         if output.ndim == 4:
-            output = output[0]
+            output = output[0]  # 去掉 batch 维 -> (C, H, W)
 
         if output.shape[0] == 2:
-            output = output[0]
+            # 双通道 (背景, 前景)，取前景通道
+            output = output[1]
         else:
+            # 单通道，直接取第一个
             output = output[0]
 
         mask = cv2.resize(output, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)

@@ -9,9 +9,14 @@ let batchResults = [];              // 批量检测结果
 let batchId = null;                // 当前批次ID
 let currentNodules = [];
 let statsChart = null;
-let preprocessEnabled = false;    // 自适应预处理状态
 let segmentationEnabled = false;   // 肺部分割状态
-let preprocessAutoMode = true;     // 预处理参数自动模式（自动根据图像计算）
+
+// 各预处理方法独立开关状态
+let normalizeEnabled = false;       // ① 归一化
+let gammaEnabled = false;          // ② Gamma
+let claheEnabled = false;          // ③ CLAHE
+let tophatEnabled = false;         // ④ Top-hat
+let sharpenEnabled = false;        // ⑤ 锐化
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -69,23 +74,22 @@ function debounce(func, wait) {
     };
 }
 
-// 预览函数 - 使用当前滑块参数预览图像
+// 预览函数 - 使用当前参数预览图像
 let isPreviewLoading = false;
 
 async function previewWithParams() {
     if (files.length === 0 || !originalImage) return;
-    if (preprocessAutoMode) return;  // 自动模式下不预览
 
-    const gamma = parseFloat(document.getElementById('gammaSlider').value);
-    const clipLimit = parseFloat(document.getElementById('clipSlider').value);
+    const options = collectPreprocessOptions();
 
     isPreviewLoading = true;
     showPreviewLoading(true);
 
     try {
-        const result = await api.previewPreprocess(files[currentIndex], gamma, clipLimit);
+        const result = await api.previewPreprocess(files[currentIndex], options);
         if (result.processed_image_data) {
             await canvas.loadImageFromDataUrl(result.processed_image_data);
+            canvas.drawNodules(currentNodules);
         }
     } catch (error) {
         console.error('Preview failed:', error);
@@ -109,6 +113,41 @@ function showPreviewLoading(show) {
 // 防抖版本的预览（300ms 防抖）
 const debouncedPreview = debounce(previewWithParams, 300);
 
+// 收集当前预处理参数
+function collectPreprocessOptions() {
+    const options = {
+        // 分割时强制启用预处理流水线，确保 normalize 生效
+        preprocess: normalizeEnabled || gammaEnabled || claheEnabled || tophatEnabled || sharpenEnabled || segmentationEnabled,
+        normalize: normalizeEnabled || segmentationEnabled,
+    };
+
+    if (gammaEnabled) {
+        const gammaSlider = document.getElementById('gammaSlider');
+        options.gamma = gammaSlider ? parseFloat(gammaSlider.value) : 1.0;
+    }
+
+    if (claheEnabled) {
+        const clipSlider = document.getElementById('clipSlider');
+        options.clip_limit = clipSlider ? parseFloat(clipSlider.value) : 2.0;
+    }
+
+    if (tophatEnabled) {
+        const kernelSlider = document.getElementById('tophatKernelSlider');
+        const weightSlider = document.getElementById('tophatWeightSlider');
+        options.tophat = true;
+        options.tophat_kernel = kernelSlider ? parseInt(kernelSlider.value) : 15;
+        options.tophat_weight = weightSlider ? parseFloat(weightSlider.value) : 0.5;
+    }
+
+    if (sharpenEnabled) {
+        const weightSlider = document.getElementById('sharpenWeightSlider');
+        options.sharpen = true;
+        options.sharpen_weight = weightSlider ? parseFloat(weightSlider.value) : 1.3;
+    }
+
+    return options;
+}
+
 // 初始化事件监听
 function initEventListeners() {
     // 检测按钮
@@ -117,7 +156,7 @@ function initEventListeners() {
         btnDetect.addEventListener('click', startDetection);
     }
 
-    // 肺部分割勾选 - 切换时对所有图片处理并显示轮廓
+    // 肺部分割勾选
     const processToggle = document.getElementById('processModuleToggle');
     if (processToggle) {
         processToggle.addEventListener('change', async (e) => {
@@ -126,22 +165,14 @@ function initEventListeners() {
 
             if (files.length === 0) return;
 
-            // 保存当前的结节数据
             const nodulesToDraw = currentNodules || [];
 
             if (e.target.checked) {
-                // 勾选时：对所有图片获取分割轮廓
                 showPreviewLoading(true);
                 try {
-                    let gamma = null;
-                    let clipLimit = null;
-                    if (!preprocessAutoMode) {
-                        gamma = parseFloat(document.getElementById('gammaSlider').value);
-                        clipLimit = parseFloat(document.getElementById('clipSlider').value);
-                    }
-                    // 对所有图片处理
+                    const options = collectPreprocessOptions();
                     for (let i = 0; i < files.length; i++) {
-                        const result = await api.previewSegmentation(files[i], preprocessEnabled, gamma, clipLimit);
+                        const result = await api.previewSegmentation(files[i], options);
                         batchResults[i] = batchResults[i] || {};
                         batchResults[i].lung_contours = result.lung_contours || [];
                     }
@@ -152,106 +183,144 @@ function initEventListeners() {
                 }
                 showPreviewLoading(false);
             } else {
-                // 取消勾选时：隐藏轮廓
                 for (let i = 0; i < files.length; i++) {
                     if (batchResults[i]) batchResults[i].lung_contours = [];
                 }
                 window.currentLungContours = [];
             }
 
-            // 统一重绘
             if (originalImage) {
-                canvas.drawNodules(nodulesToDraw);
-            }
-        });
-    }
-
-    // 自适应预处理勾选 - 显示/隐藏参数面板，并自动处理所有图像
-    const preprocessToggle = document.getElementById('preprocessToggle');
-    if (preprocessToggle) {
-        preprocessToggle.addEventListener('change', async (e) => {
-            window.preprocessEnabled = e.target.checked;
-            preprocessEnabled = e.target.checked;
-            const paramsPanel = document.getElementById('preprocessParams');
-            if (paramsPanel) {
-                paramsPanel.classList.toggle('hidden', !e.target.checked);
-            }
-
-            if (e.target.checked) {
-                // 勾选时：用自动参数预览，按钮保持灰色
-                if (files.length > 0) {
-                    showPreviewLoading(true);
-                    try {
-                        // 获取自动参数
-                        const params = await api.calcPreprocessParams(files[currentIndex]);
-                        const gamma = params.gamma || 1.0;
-                        const clipLimit = params.clip_limit || 2.0;
-
-                        // 更新UI - 按钮保持灰色（自动模式）
-                        document.getElementById('gammaSlider').value = gamma;
-                        document.getElementById('gammaValue').textContent = gamma;
-                        document.getElementById('clipSlider').value = clipLimit;
-                        document.getElementById('clipValue').textContent = clipLimit;
-                        document.getElementById('gammaAutoBtn').classList.remove('active');
-                        document.getElementById('clipAutoBtn').classList.remove('active');
-                        preprocessAutoMode = true; // 自动模式
-
-                        // 对所有图片预览
-                        for (let i = 0; i < files.length; i++) {
-                            const result = await api.previewPreprocess(files[i], gamma, clipLimit);
-                            if (!batchResults[i]) batchResults[i] = {};
-                            batchResults[i].processed_image_data = result.processed_image_data || null;
-                        }
-
-                        // 加载当前图片的预处理结果
-                        const result = batchResults[currentIndex];
-                        if (result && result.processed_image_data) {
-                            await canvas.loadImageFromDataUrl(result.processed_image_data);
-                            canvas.drawNodules(currentNodules);
-                        }
-                    } catch (error) {
-                        console.error('Preprocess preview failed:', error);
+                // 如果没有结节数据，只重绘轮廓；否则 drawNodules 会清空并重绘
+                if (!currentNodules || currentNodules.length === 0) {
+                    if (window.currentLungContours && window.currentLungContours.length > 0) {
+                        canvas.drawLungContours();
+                    } else {
+                        canvas.clearOverlay();
                     }
-                    showPreviewLoading(false);
-                }
-            } else {
-                // 取消勾选时：恢复原始图像并重绘
-                preprocessAutoMode = false;
-                document.getElementById('gammaValue').textContent = '-';
-                document.getElementById('clipValue').textContent = '-';
-                document.getElementById('gammaAutoBtn').classList.remove('active');
-                document.getElementById('clipAutoBtn').classList.remove('active');
-                if (files.length > 0) {
-                    // 清除所有预处理结果
-                    for (let i = 0; i < files.length; i++) {
-                        if (batchResults[i]) batchResults[i].processed_image_data = null;
-                    }
-                    await canvas.loadImage(files[currentIndex]);
-                    canvas.drawNodules(currentNodules);
+                } else {
+                    canvas.drawNodules(nodulesToDraw);
                 }
             }
         });
     }
 
-    // Gamma 滑块 - 手动调整时开启手动模式，按钮变蓝
+    // 归一化开关
+    const normalizeToggle = document.getElementById('normalizeToggle');
+    if (normalizeToggle) {
+        normalizeToggle.addEventListener('change', async (e) => {
+            normalizeEnabled = e.target.checked;
+            document.getElementById('normalizeParams').classList.toggle('hidden', !e.target.checked);
+            if (files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // Gamma 开关
+    const gammaToggle = document.getElementById('gammaToggle');
+    if (gammaToggle) {
+        gammaToggle.addEventListener('change', async (e) => {
+            gammaEnabled = e.target.checked;
+            document.getElementById('gammaParams').classList.toggle('hidden', !e.target.checked);
+            if (files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // Gamma 滑块
     const gammaSlider = document.getElementById('gammaSlider');
     if (gammaSlider) {
         gammaSlider.addEventListener('input', (e) => {
-            preprocessAutoMode = false;
             document.getElementById('gammaValue').textContent = e.target.value;
-            document.getElementById('gammaAutoBtn').classList.add('active'); // 变蓝
-            debouncedPreview();
+            document.getElementById('gammaAutoBtn').classList.add('active');
+            if (gammaEnabled && files.length > 0) {
+                debouncedPreview();
+            }
         });
     }
 
-    // CLAHE Clip 滑块 - 手动调整时开启手动模式，按钮变蓝
+    // CLAHE 开关
+    const claheToggle = document.getElementById('claheToggle');
+    if (claheToggle) {
+        claheToggle.addEventListener('change', async (e) => {
+            claheEnabled = e.target.checked;
+            document.getElementById('claheParams').classList.toggle('hidden', !e.target.checked);
+            if (files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // CLAHE 滑块
     const clipSlider = document.getElementById('clipSlider');
     if (clipSlider) {
         clipSlider.addEventListener('input', (e) => {
-            preprocessAutoMode = false;
             document.getElementById('clipValue').textContent = e.target.value;
-            document.getElementById('clipAutoBtn').classList.add('active'); // 变蓝
-            debouncedPreview();
+            document.getElementById('clipAutoBtn').classList.add('active');
+            if (claheEnabled && files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // Top-hat 开关
+    const tophatToggle = document.getElementById('tophatToggle');
+    if (tophatToggle) {
+        tophatToggle.addEventListener('change', async (e) => {
+            tophatEnabled = e.target.checked;
+            document.getElementById('tophatParams').classList.toggle('hidden', !e.target.checked);
+            if (files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // Top-hat kernel 滑块
+    const tophatKernelSlider = document.getElementById('tophatKernelSlider');
+    if (tophatKernelSlider) {
+        tophatKernelSlider.addEventListener('input', (e) => {
+            document.getElementById('tophatKernelValue').textContent = e.target.value;
+            document.getElementById('tophatKernelAutoBtn').classList.add('active');
+            if (tophatEnabled && files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // Top-hat weight 滑块
+    const tophatWeightSlider = document.getElementById('tophatWeightSlider');
+    if (tophatWeightSlider) {
+        tophatWeightSlider.addEventListener('input', (e) => {
+            document.getElementById('tophatWeightValue').textContent = e.target.value;
+            document.getElementById('tophatWeightAutoBtn').classList.add('active');
+            if (tophatEnabled && files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // 锐化开关
+    const sharpenToggle = document.getElementById('sharpenToggle');
+    if (sharpenToggle) {
+        sharpenToggle.addEventListener('change', async (e) => {
+            sharpenEnabled = e.target.checked;
+            document.getElementById('sharpenParams').classList.toggle('hidden', !e.target.checked);
+            if (files.length > 0) {
+                debouncedPreview();
+            }
+        });
+    }
+
+    // 锐化 weight 滑块
+    const sharpenWeightSlider = document.getElementById('sharpenWeightSlider');
+    if (sharpenWeightSlider) {
+        sharpenWeightSlider.addEventListener('input', (e) => {
+            document.getElementById('sharpenWeightValue').textContent = e.target.value;
+            document.getElementById('sharpenWeightAutoBtn').classList.add('active');
+            if (sharpenEnabled && files.length > 0) {
+                debouncedPreview();
+            }
         });
     }
 }
@@ -332,9 +401,11 @@ async function loadImageByIndex(index) {
         if (batchResults[index] && batchResults[index].nodules) {
             displayResult(batchResults[index], index);
         } else {
-            // 只有分割轮廓或预览图像时，不清空overlay
             currentNodules = [];
-            if (!(result && result.lung_contours && result.lung_contours.length > 0)) {
+            // 只要有肺部分割结果，就重绘轮廓；否则清空 overlay
+            if (result && result.lung_contours && result.lung_contours.length > 0) {
+                // 轮廓已通过 loadImageFromDataUrl 后的 afterImageLoad 绘制
+            } else {
                 canvas.clearOverlay();
             }
             document.getElementById('resultPanel').innerHTML = '<p class="placeholder-text">点击"开始检测"进行肺结节检测</p>';
@@ -406,52 +477,45 @@ async function startDetection() {
     loadingOverlay.classList.remove('hidden');
 
     try {
-        // 获取预处理参数（自动模式下传 null 让后端计算）
-        let gamma = null;
-        let clipLimit = null;
-        if (!preprocessAutoMode) {
-            const gammaSlider = document.getElementById('gammaSlider');
-            const clipSlider = document.getElementById('clipSlider');
-            gamma = gammaSlider ? parseFloat(gammaSlider.value) : null;
-            clipLimit = clipSlider ? parseFloat(clipSlider.value) : null;
-        }
+        const options = collectPreprocessOptions();
+        options.segmentation = segmentationEnabled;
 
-        // 批量检测 - 使用一次请求发送所有图片
+        // 只要有任一预处理开启，就传 preprocess=true
+        const hasPreprocess = normalizeEnabled || gammaEnabled || claheEnabled || tophatEnabled || sharpenEnabled;
+        options.preprocess = hasPreprocess;
+
+        // 批量检测
         let statusText = '检测中...';
-        if (preprocessEnabled && segmentationEnabled) {
+        if (hasPreprocess && segmentationEnabled) {
             statusText = '预处理+分割+检测中...';
-        } else if (preprocessEnabled) {
+        } else if (hasPreprocess) {
             statusText = '预处理+检测中...';
         } else if (segmentationEnabled) {
             statusText = '分割+检测中...';
         }
         document.querySelector('#loadingOverlay p').textContent = statusText;
-        const batchResponse = await api.detectImages(files, preprocessEnabled, segmentationEnabled, gamma, clipLimit);
+
+        const batchResponse = await api.detectImages(files, options);
 
         if (batchResponse.success) {
             batchResults = batchResponse.results;
             batchId = batchResponse.batch_id;
 
-            // 先更新参数面板和轮廓（仅在启用预处理时更新）
+            // 先更新参数面板和轮廓
             const firstResult = batchResults[0];
             if (firstResult) {
-                if (preprocessEnabled) {
-                    if ('applied_gamma' in firstResult) {
-                        const gv = document.getElementById('gammaValue');
-                        const gs = document.getElementById('gammaSlider');
-                        if (gv) gv.textContent = firstResult.applied_gamma;
-                        if (gs) gs.value = firstResult.applied_gamma;
-                    }
-                    if ('applied_clip_limit' in firstResult) {
-                        const cv = document.getElementById('clipValue');
-                        const cs = document.getElementById('clipSlider');
-                        if (cv) cv.textContent = firstResult.applied_clip_limit;
-                        if (cs) cs.value = firstResult.applied_clip_limit;
-                        document.getElementById('preprocessParams').classList.remove('hidden');
-                    }
+                if ('applied_gamma' in firstResult) {
+                    const gv = document.getElementById('gammaValue');
+                    const gs = document.getElementById('gammaSlider');
+                    if (gv) gv.textContent = firstResult.applied_gamma;
+                    if (gs) gs.value = firstResult.applied_gamma;
                 }
-                // 确保预处理勾选状态
-                document.getElementById('preprocessToggle').checked = preprocessEnabled;
+                if ('applied_clip_limit' in firstResult) {
+                    const cv = document.getElementById('clipValue');
+                    const cs = document.getElementById('clipSlider');
+                    if (cv) cv.textContent = firstResult.applied_clip_limit;
+                    if (cs) cs.value = firstResult.applied_clip_limit;
+                }
                 // 设置肺部轮廓
                 window.currentLungContours = firstResult.lung_contours || [];
             }
@@ -1053,30 +1117,6 @@ async function loadModelList() {
     }
 }
 
-// 重置 Gamma 为自动（让后端根据图像自动计算）
-function resetGamma() {
-    if (!document.getElementById('gammaAutoBtn').classList.contains('active')) return;
-    preprocessAutoMode = true;
-    // 恢复原始图像
-    if (files.length > 0) {
-        canvas.loadImage(files[currentIndex]);
-    }
-    document.getElementById('gammaValue').textContent = '-';
-    document.getElementById('gammaAutoBtn').classList.remove('active');
-}
-
-// 重置 CLAHE Clip 为自动（让后端根据图像自动计算）
-function resetClip() {
-    if (!document.getElementById('clipAutoBtn').classList.contains('active')) return;
-    preprocessAutoMode = true;
-    // 恢复原始图像
-    if (files.length > 0) {
-        canvas.loadImage(files[currentIndex]);
-    }
-    document.getElementById('clipValue').textContent = '-';
-    document.getElementById('clipAutoBtn').classList.remove('active');
-}
-
 // 点击自动按钮时获取后端计算的参数并预览
 async function applyAutoParams(paramType) {
     if (files.length === 0) return;
@@ -1096,6 +1136,24 @@ async function applyAutoParams(paramType) {
             if (clipSlider) clipSlider.value = params.clip_limit;
             if (clipValue) clipValue.textContent = params.clip_limit;
             document.getElementById('clipAutoBtn').classList.remove('active');
+        } else if (paramType === 'tophat_kernel' && params.tophat_kernel !== undefined) {
+            const slider = document.getElementById('tophatKernelSlider');
+            const value = document.getElementById('tophatKernelValue');
+            if (slider) slider.value = params.tophat_kernel;
+            if (value) value.textContent = params.tophat_kernel;
+            document.getElementById('tophatKernelAutoBtn').classList.remove('active');
+        } else if (paramType === 'tophat_weight' && params.tophat_weight !== undefined) {
+            const slider = document.getElementById('tophatWeightSlider');
+            const value = document.getElementById('tophatWeightValue');
+            if (slider) slider.value = params.tophat_weight;
+            if (value) value.textContent = params.tophat_weight;
+            document.getElementById('tophatWeightAutoBtn').classList.remove('active');
+        } else if (paramType === 'sharpen_weight' && params.sharpen_weight !== undefined) {
+            const slider = document.getElementById('sharpenWeightSlider');
+            const value = document.getElementById('sharpenWeightValue');
+            if (slider) slider.value = params.sharpen_weight;
+            if (value) value.textContent = params.sharpen_weight;
+            document.getElementById('sharpenWeightAutoBtn').classList.remove('active');
         } else if (paramType === 'all') {
             // 全部自动
             if (params.gamma !== undefined) {
@@ -1110,25 +1168,37 @@ async function applyAutoParams(paramType) {
                 if (clipSlider) clipSlider.value = params.clip_limit;
                 if (clipValue) clipValue.textContent = params.clip_limit;
             }
+            if (params.tophat_kernel !== undefined) {
+                const slider = document.getElementById('tophatKernelSlider');
+                const value = document.getElementById('tophatKernelValue');
+                if (slider) slider.value = params.tophat_kernel;
+                if (value) value.textContent = params.tophat_kernel;
+            }
+            if (params.tophat_weight !== undefined) {
+                const slider = document.getElementById('tophatWeightSlider');
+                const value = document.getElementById('tophatWeightValue');
+                if (slider) slider.value = params.tophat_weight;
+                if (value) value.textContent = params.tophat_weight;
+            }
+            if (params.sharpen_weight !== undefined) {
+                const slider = document.getElementById('sharpenWeightSlider');
+                const value = document.getElementById('sharpenWeightValue');
+                if (slider) slider.value = params.sharpen_weight;
+                if (value) value.textContent = params.sharpen_weight;
+            }
             document.getElementById('gammaAutoBtn').classList.remove('active');
             document.getElementById('clipAutoBtn').classList.remove('active');
+            document.getElementById('tophatKernelAutoBtn').classList.remove('active');
+            document.getElementById('tophatWeightAutoBtn').classList.remove('active');
+            document.getElementById('sharpenWeightAutoBtn').classList.remove('active');
         }
 
-        preprocessAutoMode = true;
-
-        // 使用计算出的参数预览图像
-        const gamma = parseFloat(document.getElementById('gammaSlider').value);
-        const clipLimit = parseFloat(document.getElementById('clipSlider').value);
-
-        showPreviewLoading(true);
-        const result = await api.previewPreprocess(files[currentIndex], gamma, clipLimit);
-        if (result.processed_image_data) {
-            await canvas.loadImageFromDataUrl(result.processed_image_data);
+        // 触发预览
+        if (files.length > 0) {
+            debouncedPreview();
         }
-        showPreviewLoading(false);
     } catch (error) {
         console.error('Failed to get auto params:', error);
-        showPreviewLoading(false);
     }
 }
 
@@ -1240,24 +1310,14 @@ window.clearAllHistory = clearAllHistory;
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.saveSettings = saveSettings;
-window.resetGamma = resetGamma;
-window.resetClip = resetClip;
 window.applyAutoParams = applyAutoParams;
 Object.defineProperty(window, 'currentNodules', {
     get: () => currentNodules,
     set: (v) => { currentNodules = v; }
 });
-Object.defineProperty(window, 'preprocessEnabled', {
-    get: () => preprocessEnabled,
-    set: (v) => { preprocessEnabled = v; }
-});
 Object.defineProperty(window, 'segmentationEnabled', {
     get: () => segmentationEnabled,
     set: (v) => { segmentationEnabled = v; }
-});
-Object.defineProperty(window, 'preprocessAutoMode', {
-    get: () => preprocessAutoMode,
-    set: (v) => { preprocessAutoMode = v; }
 });
 
 // 导出所有带标注的图片为ZIP

@@ -20,15 +20,21 @@ async function checkHealth() {
 }
 
 // 上传图片进行检测
-async function detectImage(file, preprocess = false, segmentation = false, gamma = null, clipLimit = null) {
+async function detectImage(file, options = {}) {
     const formData = new FormData();
     formData.append('image', file);
 
     const params = new URLSearchParams();
-    if (preprocess) params.append('preprocess', 'true');
-    if (segmentation) params.append('segmentation', 'true');
-    if (gamma !== null) params.append('gamma', gamma.toString());
-    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
+    if (options.preprocess) params.append('preprocess', 'true');
+    if (options.segmentation) params.append('segmentation', 'true');
+    if (options.normalize !== undefined) params.append('normalize', options.normalize.toString());
+    if (options.gamma !== null && options.gamma !== undefined) params.append('gamma', options.gamma.toString());
+    if (options.clip_limit !== null && options.clip_limit !== undefined) params.append('clip_limit', options.clip_limit.toString());
+    if (options.tophat) params.append('tophat', 'true');
+    if (options.tophat_kernel !== undefined) params.append('tophat_kernel', options.tophat_kernel.toString());
+    if (options.tophat_weight !== undefined) params.append('tophat_weight', options.tophat_weight.toString());
+    if (options.sharpen) params.append('sharpen', 'true');
+    if (options.sharpen_weight !== undefined) params.append('sharpen_weight', options.sharpen_weight.toString());
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const url = `${API_BASE}/api/detect${queryStr}`;
@@ -52,17 +58,23 @@ async function detectImage(file, preprocess = false, segmentation = false, gamma
 }
 
 // 批量上传图片进行检测
-async function detectImages(files, preprocess = false, segmentation = false, gamma = null, clipLimit = null) {
+async function detectImages(files, options = {}) {
     const formData = new FormData();
     for (const file of files) {
         formData.append('images', file);
     }
 
     const params = new URLSearchParams();
-    if (preprocess) params.append('preprocess', 'true');
-    if (segmentation) params.append('segmentation', 'true');
-    if (gamma !== null) params.append('gamma', gamma.toString());
-    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
+    if (options.preprocess) params.append('preprocess', 'true');
+    if (options.segmentation) params.append('segmentation', 'true');
+    if (options.normalize !== undefined) params.append('normalize', options.normalize.toString());
+    if (options.gamma !== null && options.gamma !== undefined) params.append('gamma', options.gamma.toString());
+    if (options.clip_limit !== null && options.clip_limit !== undefined) params.append('clip_limit', options.clip_limit.toString());
+    if (options.tophat) params.append('tophat', 'true');
+    if (options.tophat_kernel !== undefined) params.append('tophat_kernel', options.tophat_kernel.toString());
+    if (options.tophat_weight !== undefined) params.append('tophat_weight', options.tophat_weight.toString());
+    if (options.sharpen) params.append('sharpen', 'true');
+    if (options.sharpen_weight !== undefined) params.append('sharpen_weight', options.sharpen_weight.toString());
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const url = `${API_BASE}/api/detect/batch${queryStr}`;
@@ -86,13 +98,19 @@ async function detectImages(files, preprocess = false, segmentation = false, gam
 }
 
 // 预处理预览
-async function previewPreprocess(file, gamma, clipLimit) {
+async function previewPreprocess(file, options = {}) {
     const formData = new FormData();
     formData.append('image', file);
 
     const params = new URLSearchParams();
-    params.append('gamma', gamma.toString());
-    params.append('clip_limit', clipLimit.toString());
+    if (options.normalize !== undefined) params.append('normalize', options.normalize.toString());
+    if (options.gamma !== null && options.gamma !== undefined) params.append('gamma', options.gamma.toString());
+    if (options.clip_limit !== null && options.clip_limit !== undefined) params.append('clip_limit', options.clip_limit.toString());
+    if (options.tophat) params.append('tophat', 'true');
+    if (options.tophat_kernel !== undefined) params.append('tophat_kernel', options.tophat_kernel.toString());
+    if (options.tophat_weight !== undefined) params.append('tophat_weight', options.tophat_weight.toString());
+    if (options.sharpen) params.append('sharpen', 'true');
+    if (options.sharpen_weight !== undefined) params.append('sharpen_weight', options.sharpen_weight.toString());
 
     try {
         const response = await fetch(`${API_BASE}/api/preprocess/preview?${params.toString()}`, {
@@ -136,14 +154,20 @@ async function calcPreprocessParams(file) {
 }
 
 // 分割预览
-async function previewSegmentation(file, preprocess = false, gamma = null, clipLimit = null) {
+async function previewSegmentation(file, options = {}) {
     const formData = new FormData();
     formData.append('image', file);
 
     const params = new URLSearchParams();
-    if (preprocess) params.append('preprocess', 'true');
-    if (gamma !== null) params.append('gamma', gamma.toString());
-    if (clipLimit !== null) params.append('clip_limit', clipLimit.toString());
+    if (options.preprocess) params.append('preprocess', 'true');
+    if (options.normalize !== undefined) params.append('normalize', options.normalize.toString());
+    if (options.gamma !== null && options.gamma !== undefined) params.append('gamma', options.gamma.toString());
+    if (options.clip_limit !== null && options.clip_limit !== undefined) params.append('clip_limit', options.clip_limit.toString());
+    if (options.tophat) params.append('tophat', 'true');
+    if (options.tophat_kernel !== undefined) params.append('tophat_kernel', options.tophat_kernel.toString());
+    if (options.tophat_weight !== undefined) params.append('tophat_weight', options.tophat_weight.toString());
+    if (options.sharpen) params.append('sharpen', 'true');
+    if (options.sharpen_weight !== undefined) params.append('sharpen_weight', options.sharpen_weight.toString());
 
     try {
         const response = await fetch(`${API_BASE}/api/segment/preview?${params.toString()}`, {

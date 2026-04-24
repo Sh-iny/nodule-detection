@@ -122,7 +122,6 @@ function loadImageFromDataUrl(dataUrl) {
         img.onload = () => {
             originalImage = img;
             resizeCanvas();
-            clearOverlay();  // 清空覆盖层
             document.getElementById('imagePlaceholder').classList.add('hidden');
             resolve(img);
         };
@@ -167,8 +166,8 @@ function drawLungContours() {
     const contours = window.currentLungContours;
     if (!contours || contours.length === 0 || !originalImage) return;
 
-    const scaleX = displayWidth / originalImage.width;
-    const scaleY = displayHeight / originalImage.height;
+    const scaleX = displayWidth > 0 ? displayWidth / originalImage.width : 1;
+    const scaleY = displayHeight > 0 ? displayHeight / originalImage.height : 1;
 
     overlayCtx.strokeStyle = '#22c55e';
     overlayCtx.lineWidth = 2;
@@ -195,9 +194,9 @@ function drawNodules(nodules) {
     if (!originalImage) return;
 
     // 清空画布
-    overlayCtx.clearRect(0, 0, displayWidth, displayHeight);
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-    // 先绘制肺部轮廓（始终绘制，不管有没有结节）
+    // 始终绘制肺部轮廓（不管有没有结节）
     if (window.currentLungContours && window.currentLungContours.length > 0) {
         drawLungContours();
     }
@@ -206,8 +205,8 @@ function drawNodules(nodules) {
     if (!nodules || nodules.length === 0) return;
 
     // 计算缩放比例（从原图到显示尺寸）
-    const scaleX = displayWidth / originalImage.width;
-    const scaleY = displayHeight / originalImage.height;
+    const scaleX = displayWidth > 0 ? displayWidth / originalImage.width : 1;
+    const scaleY = displayHeight > 0 ? displayHeight / originalImage.height : 1;
 
     // 绘制每个结节（使用矩形框）
     nodules.forEach((nodule) => {

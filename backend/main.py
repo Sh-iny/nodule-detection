@@ -18,7 +18,7 @@ import uvicorn
 from detector import Detector
 from database import Database
 from segmentor import Segmentor
-from preprocessor import adaptive_preprocess_xray
+from preprocessor import adaptive_preprocess_xray, calc_auto_params
 import numpy as np
 import cv2
 
@@ -67,9 +67,6 @@ app = FastAPI(title="Lung Nodule Detector")
 detector = Detector()
 segmentor = Segmentor()
 db = Database(str(DB_PATH))
-
-# 分割模型路径
-SEGMENTOR_MODEL_PATH = MODEL_DIR / "unet_lung_smp.onnx"
 
 # 挂载静态文件 - 必须在这里
 if (FRONTEND_PATH / "css").exists():
@@ -120,7 +117,17 @@ async def health():
 
 
 @app.post("/api/preprocess/preview")
-async def preprocess_preview(image: UploadFile = File(...), gamma: float = Query(1.0, ge=0.1, le=3.0), clip_limit: float = Query(2.0, ge=0.5, le=5.0)):
+async def preprocess_preview(
+    image: UploadFile = File(...),
+    normalize: bool = Query(False),
+    gamma: float = Query(None, ge=0.1, le=3.0),
+    clip_limit: float = Query(None, ge=0.5, le=5.0),
+    tophat: bool = Query(False),
+    tophat_kernel: int = Query(15, ge=3, le=51),
+    tophat_weight: float = Query(0.5, ge=0.0, le=2.0),
+    sharpen: bool = Query(False),
+    sharpen_weight: float = Query(1.5, ge=1.0, le=3.0),
+):
     """预处理预览，只返回处理后的图像（不做检测）"""
     if image.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Unsupported file type")
@@ -133,7 +140,17 @@ async def preprocess_preview(image: UploadFile = File(...), gamma: float = Query
 
     try:
         image_array = cv2.imread(tmp_path)
-        processed = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+        processed = adaptive_preprocess_xray(
+            image_array,
+            normalize=normalize,
+            gamma=gamma,
+            clip_limit=clip_limit,
+            tophat=tophat,
+            tophat_kernel=tophat_kernel,
+            tophat_weight=tophat_weight,
+            sharpen=sharpen,
+            sharpen_weight=sharpen_weight,
+        )
 
         # 返回处理后的图像（不保存文件）
         _, buffer = cv2.imencode('.jpg', processed)
@@ -159,36 +176,25 @@ async def preprocess_calc(image: UploadFile = File(...)):
 
     try:
         image_array = cv2.imread(tmp_path)
-        gray = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
-        mean = np.mean(gray)
-        std = np.std(gray)
-
-        # 计算 gamma
-        if mean > 180:
-            gamma = 1.4
-        elif mean > 150:
-            gamma = 1.2
-        elif mean < 80:
-            gamma = 0.8
-        else:
-            gamma = 1.0
-
-        # 计算 CLAHE clip limit
-        if std < 40:
-            clip_limit = 3.0
-        elif std < 60:
-            clip_limit = 2.0
-        else:
-            clip_limit = 1.5
-
-        return {"gamma": gamma, "clip_limit": clip_limit}
+        params = calc_auto_params(image_array)
+        return params
     finally:
         os.unlink(tmp_path)
 
 
 @app.post("/api/segment/preview")
-async def segment_preview(image: UploadFile = File(...), preprocess: bool = False,
-                         gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
+async def segment_preview(
+    image: UploadFile = File(...),
+    preprocess: bool = Query(False),
+    normalize: bool = Query(False),
+    gamma: float = Query(None, ge=0.1, le=3.0),
+    clip_limit: float = Query(None, ge=0.5, le=5.0),
+    tophat: bool = Query(False),
+    tophat_kernel: int = Query(15, ge=3, le=51),
+    tophat_weight: float = Query(0.5, ge=0.0, le=2.0),
+    sharpen: bool = Query(False),
+    sharpen_weight: float = Query(1.5, ge=1.0, le=3.0),
+):
     """肺部分割预览，只返回分割轮廓（不做检测）"""
     if segmentor.session is None:
         raise HTTPException(status_code=500, detail="Segmentor not loaded")
@@ -207,11 +213,23 @@ async def segment_preview(image: UploadFile = File(...), preprocess: bool = Fals
 
         # 预处理
         if preprocess:
-            image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+            image_array = adaptive_preprocess_xray(
+                image_array,
+                normalize=normalize,
+                gamma=gamma,
+                clip_limit=clip_limit,
+                tophat=tophat,
+                tophat_kernel=tophat_kernel,
+                tophat_weight=tophat_weight,
+                sharpen=sharpen,
+                sharpen_weight=sharpen_weight,
+            )
 
         # 分割
+        print(f"[SegmentPreview] preprocess={preprocess}, normalize={normalize}, gamma={gamma}, clip={clip_limit}")
         mask, elapsed_ms = segmentor.segment(image_array)
         lung_contours = segmentor.get_lung_contours(mask)
+        print(f"[SegmentPreview] Got {len(lung_contours)} contours, mask sum={mask.sum()}, mask shape={mask.shape}")
 
         return {"lung_contours": lung_contours, "elapsed_ms": round(elapsed_ms, 2)}
     finally:
@@ -219,9 +237,20 @@ async def segment_preview(image: UploadFile = File(...), preprocess: bool = Fals
 
 
 @app.post("/api/detect")
-async def detect(image: UploadFile = File(...), preprocess: bool = False, segmentation: bool = False,
-                gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
-    """上传单张图片进行检测，可选自适应预处理和肺部分割"""
+async def detect(
+    image: UploadFile = File(...),
+    preprocess: bool = Query(False),
+    segmentation: bool = Query(False),
+    normalize: bool = Query(False),
+    gamma: float = Query(None, ge=0.1, le=3.0),
+    clip_limit: float = Query(None, ge=0.5, le=5.0),
+    tophat: bool = Query(False),
+    tophat_kernel: int = Query(15, ge=3, le=51),
+    tophat_weight: float = Query(0.5, ge=0.0, le=2.0),
+    sharpen: bool = Query(False),
+    sharpen_weight: float = Query(1.5, ge=1.0, le=3.0),
+):
+    """上传单张图片进行检测，可选预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
@@ -241,9 +270,19 @@ async def detect(image: UploadFile = File(...), preprocess: bool = False, segmen
         segmentation_elapsed_ms = 0
         processed_image_data = None
 
-        # 优先级1：自适应预处理
+        # 预处理
         if preprocess:
-            image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+            image_array = adaptive_preprocess_xray(
+                image_array,
+                normalize=normalize,
+                gamma=gamma,
+                clip_limit=clip_limit,
+                tophat=tophat,
+                tophat_kernel=tophat_kernel,
+                tophat_weight=tophat_weight,
+                sharpen=sharpen,
+                sharpen_weight=sharpen_weight,
+            )
             # 保存预处理后的图片
             processed_path = tmp_path + ".processed.jpg"
             cv2.imwrite(processed_path, image_array)
@@ -252,7 +291,7 @@ async def detect(image: UploadFile = File(...), preprocess: bool = False, segmen
                 processed_bytes = f.read()
             processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
-        # 优先级2：肺部分割
+        # 肺部分割
         if segmentation and segmentor.session is not None:
             mask, segmentation_elapsed_ms = segmentor.segment(image_array)
             lung_contours = segmentor.get_lung_contours(mask)
@@ -340,9 +379,20 @@ def _nodule_in_mask(nodule, mask: np.ndarray) -> bool:
 
 
 @app.post("/api/detect/batch")
-async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = False, segmentation: bool = False,
-                      gamma: float = Query(None, ge=0.1, le=3.0), clip_limit: float = Query(None, ge=0.5, le=5.0)):
-    """批量上传图片进行检测，可选自适应预处理和肺部分割"""
+async def detect_batch(
+    images: List[UploadFile] = File(...),
+    preprocess: bool = Query(False),
+    segmentation: bool = Query(False),
+    normalize: bool = Query(False),
+    gamma: float = Query(None, ge=0.1, le=3.0),
+    clip_limit: float = Query(None, ge=0.5, le=5.0),
+    tophat: bool = Query(False),
+    tophat_kernel: int = Query(15, ge=3, le=51),
+    tophat_weight: float = Query(0.5, ge=0.0, le=2.0),
+    sharpen: bool = Query(False),
+    sharpen_weight: float = Query(1.5, ge=1.0, le=3.0),
+):
+    """批量上传图片进行检测，可选预处理和肺部分割"""
     if detector.session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
@@ -365,11 +415,21 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
             lung_contours = []
             segmentation_elapsed_ms = 0
 
-            # 优先级1：自适应预处理
+            # 预处理
             processed_image_data = None
             processed_path = None
             if preprocess:
-                image_array = adaptive_preprocess_xray(image_array, gamma=gamma, clip_limit=clip_limit)
+                image_array = adaptive_preprocess_xray(
+                    image_array,
+                    normalize=normalize,
+                    gamma=gamma,
+                    clip_limit=clip_limit,
+                    tophat=tophat,
+                    tophat_kernel=tophat_kernel,
+                    tophat_weight=tophat_weight,
+                    sharpen=sharpen,
+                    sharpen_weight=sharpen_weight,
+                )
                 processed_path = tmp_path + ".processed.jpg"
                 cv2.imwrite(processed_path, image_array)
                 # 立即读取处理后的图像数据（在删除文件之前）
@@ -377,7 +437,7 @@ async def detect_batch(images: List[UploadFile] = File(...), preprocess: bool = 
                     processed_bytes = f.read()
                 processed_image_data = f"data:image/jpeg;base64,{base64.b64encode(processed_bytes).decode('utf-8')}"
 
-            # 优先级2：肺部分割
+            # 肺部分割
             if segmentation and segmentor.session is not None:
                 print(f"[Batch] Segmentation enabled, session: {segmentor.session is not None}")
                 mask, segmentation_elapsed_ms = segmentor.segment(image_array)
