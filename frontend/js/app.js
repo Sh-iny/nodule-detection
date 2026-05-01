@@ -662,6 +662,14 @@ async function checkServerConnection() {
     setTimeout(checkServerConnection, 30000);
 }
 
+// 截断文件名
+function truncateFilename(name, maxLen = 20) {
+    if (!name) return '未知图片';
+    const base = name.split('/').pop().split('\\').pop();
+    if (base.length <= maxLen) return base;
+    return base.substring(0, maxLen - 3) + '...';
+}
+
 // 加载历史记录
 async function loadHistory() {
     const historyList = document.getElementById('historyList');
@@ -691,15 +699,15 @@ async function loadHistory() {
 
         historyList.innerHTML = batches.map(batch => {
             const totalImages = batch.length;
-            const totalNodules = batch.reduce((sum, r) => sum + r.nodule_count, 0);
             const firstRecord = batch[0];
             const time = formatTime(firstRecord.detection_time);
 
             if (totalImages === 1) {
+                const filename = truncateFilename(firstRecord.image_path, 24);
                 return `
                 <div class="history-item" onclick="showRecordDetail(${firstRecord.id})">
                     <div class="history-info">
-                        <span class="history-count">检测到 ${totalNodules} 个结节</span>
+                        <span class="history-count" title="${firstRecord.image_path ? firstRecord.image_path.split('/').pop().split('\\').pop() : ''}">${filename}</span>
                         <span class="history-time">${time}</span>
                     </div>
                     <button class="history-delete" onclick="event.stopPropagation(); removeRecord(${firstRecord.id})">
@@ -708,11 +716,11 @@ async function loadHistory() {
                 </div>
             `;
             } else {
-                // 批量记录，点击展开
+                const firstFilename = truncateFilename(firstRecord.image_path, 18);
                 return `
                 <div class="history-item batch-item" onclick="toggleBatch(this, ${JSON.stringify(batch.map(r => r.id))})">
                     <div class="history-info">
-                        <span class="history-count">检测 ${totalImages} 张图片，${totalNodules} 个结节</span>
+                        <span class="history-count">${firstFilename}等</span>
                         <span class="history-time">${time}</span>
                     </div>
                     <button class="history-delete" onclick="event.stopPropagation(); removeBatch([${batch.map(r => r.id).join(',')}])">
@@ -722,7 +730,7 @@ async function loadHistory() {
                 <div class="batch-records hidden">
                     ${batch.map(record => `
                         <div class="history-sub-item" onclick="showRecordDetail(${record.id})">
-                            <span>图片 ${batch.indexOf(record) + 1}: ${record.nodule_count} 个结节</span>
+                            <span>${truncateFilename(record.image_path, 20)}</span>
                         </div>
                     `).join('')}
                 </div>

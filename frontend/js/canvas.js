@@ -169,8 +169,10 @@ function drawLungContours() {
     const scaleX = displayWidth > 0 ? displayWidth / originalImage.width : 1;
     const scaleY = displayHeight > 0 ? displayHeight / originalImage.height : 1;
 
-    overlayCtx.strokeStyle = '#22c55e';
-    overlayCtx.lineWidth = 2;
+    overlayCtx.strokeStyle = '#00ff88';
+    overlayCtx.lineWidth = 4;
+    overlayCtx.shadowColor = '#00ff88';
+    overlayCtx.shadowBlur = 6;
 
     contours.forEach(contour => {
         if (contour.length < 3) return;

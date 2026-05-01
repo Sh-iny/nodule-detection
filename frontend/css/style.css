@@ -479,6 +479,7 @@ body {
 /* 图像容器 */
 .image-card {
     height: calc(100vh - 120px);
+    max-height: 800px;
     display: flex;
     flex-direction: column;
 }
@@ -802,6 +803,10 @@ body {
 .history-count {
     font-size: 14px;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
 }
 
 .history-delete {
@@ -1037,7 +1042,18 @@ body {
 .param-row .slider-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+}
+
+.param-row .slider-min,
+.param-row .slider-max {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-family: monospace;
+    min-width: 28px;
+    text-align: center;
+    flex-shrink: 0;
 }
 
 .param-row label {

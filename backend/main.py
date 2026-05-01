@@ -226,10 +226,8 @@ async def segment_preview(
             )
 
         # 分割
-        print(f"[SegmentPreview] preprocess={preprocess}, normalize={normalize}, gamma={gamma}, clip={clip_limit}")
         mask, elapsed_ms = segmentor.segment(image_array)
         lung_contours = segmentor.get_lung_contours(mask)
-        print(f"[SegmentPreview] Got {len(lung_contours)} contours, mask sum={mask.sum()}, mask shape={mask.shape}")
 
         return {"lung_contours": lung_contours, "elapsed_ms": round(elapsed_ms, 2)}
     finally:
@@ -320,7 +318,8 @@ async def detect(
 
         result_json = json.dumps([n.to_dict() for n in nodules])
         batch_id = db.get_next_batch_id()
-        record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
+        original_name = os.path.basename(image.filename) if image.filename else tmp_path
+        record_id = db.insert(original_name, len(nodules), result_json, image_data, batch_id)
 
         # 计算实际使用的参数（用于前端显示）
         gray = cv2.cvtColor(cv2.imread(tmp_path), cv2.COLOR_BGR2GRAY)
@@ -464,7 +463,8 @@ async def detect_batch(
             image_base64 = base64.b64encode(content).decode('utf-8')
             image_data = f"data:{image.content_type};base64,{image_base64}"
             result_json = json.dumps([n.to_dict() for n in nodules])
-            record_id = db.insert(tmp_path, len(nodules), result_json, image_data, batch_id)
+            original_name = os.path.basename(image.filename) if image.filename else tmp_path
+            record_id = db.insert(original_name, len(nodules), result_json, image_data, batch_id)
 
             result_item = {
                 "success": True,
