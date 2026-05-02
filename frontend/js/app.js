@@ -909,8 +909,15 @@ async function loadStats() {
 
             // 计算Y轴间隔，最多6个刻度
             const maxCount = Math.max(...counts, 0);
-            const maxTicks = 6;
-            const interval = Math.ceil(maxCount / (maxTicks - 1)) || 1;
+            let interval, maxY;
+            if (maxCount === 0) {
+                interval = 1;
+                maxY = 6;
+            } else {
+                const maxTicks = 6;
+                interval = Math.ceil(maxCount / (maxTicks - 1)) || 1;
+                maxY = Math.ceil(maxCount / interval) * interval;
+            }
 
             statsChart.setOption({
                 xAxis: {
@@ -919,10 +926,11 @@ async function loadStats() {
                 yAxis: {
                     type: 'value',
                     min: 0,
-                    max: maxCount + interval,
+                    max: maxY,
                     interval: interval,
                     axisLabel: {
-                        fontSize: 10,
+                        color: '#0f1724',
+                        fontSize: 11,
                         formatter: (val) => Math.round(val)
                     }
                 },
@@ -959,7 +967,10 @@ function initStatsChart() {
 
     const option = {
         tooltip: {
-            trigger: 'axis'
+            trigger: 'axis',
+            backgroundColor: 'rgba(15, 23, 36, 0.92)',
+            borderColor: 'rgba(0, 212, 255, 0.3)',
+            textStyle: { color: '#e2e8f0', fontSize: 12 }
         },
         grid: {
             left: 40,
@@ -970,8 +981,11 @@ function initStatsChart() {
         xAxis: {
             type: 'category',
             data: initDays,
+            axisLine: { lineStyle: { color: 'rgba(15,23,36,0.25)' } },
+            axisTick: { show: false },
             axisLabel: {
-                fontSize: 10
+                color: '#0f1724',
+                fontSize: 11
             }
         },
         yAxis: {
@@ -979,17 +993,31 @@ function initStatsChart() {
             min: 0,
             max: 6,
             interval: 1,
+            splitLine: {
+                lineStyle: {
+                    color: 'rgba(15,23,36,0.1)',
+                    type: 'dashed'
+                }
+            },
+            axisLine: { lineStyle: { color: 'rgba(15,23,36,0.25)' } },
+            axisTick: { show: false },
             axisLabel: {
-                fontSize: 10,
+                color: '#0f1724',
+                fontSize: 11,
                 formatter: (val) => Math.round(val)
             }
         },
         series: [{
             name: '检测次数',
             type: 'bar',
+            barWidth: '50%',
             data: [0, 0, 0, 0, 0, 0, 0],
             itemStyle: {
-                color: '#2563eb'
+                borderRadius: [4, 4, 0, 0],
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#00d4ff' },
+                    { offset: 1, color: '#1e4e8f' }
+                ])
             }
         }]
     };

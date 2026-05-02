@@ -829,7 +829,7 @@ body {
 .stats-chart {
     height: 200px;
     margin-bottom: 16px;
-    background: rgba(17, 24, 39, 0.3);
+    background: rgba(40, 55, 85, 0.4);
     border-radius: 8px;
     padding: 8px;
 }
